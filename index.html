@@ -572,7 +572,7 @@
                 const columnMapping = detectColumnMapping(headers);
                 showDebug(`Column mapping: ${JSON.stringify(columnMapping)}`);
                 
-                if (!columnMapping.INTERNALID || !columnMapping.APPOINTMENTDATE) {
+                if (columnMapping.INTERNALID === undefined || columnMapping.APPOINTMENTDATE === undefined) {
                     throw new Error('Could not find required columns INTERNALID and APPOINTMENTDATE');
                 }
                 
