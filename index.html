@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Greencare Follow-Up Conversion Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            color: #2c3e50;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2d5a27 0%, #4a7c59 100%);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo-section h1 {
+            font-size: 2rem;
+            font-weight: 300;
+            margin-bottom: 5px;
+        }
+
+        .logo-section p {
+            opacity: 0.9;
+            font-size: 0.9rem;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .controls select, .controls button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .controls select:hover, .controls button:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .controls select option {
+            background: #2d5a27;
+            color: white;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            border-left: 4px solid #4a7c59;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+
+        .card h3 {
+            color: #2d5a27;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 4px;
+        }
+
+        .card .subtitle {
+            color: #7f8c8d;
+            font-size: 0.85rem;
+        }
+
+        .chart-section {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .chart-container {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        .chart-container h3 {
+            color: #2d5a27;
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .targets-section {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        .targets-section h3 {
+            color: #2d5a27;
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .target-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .target-item:last-child {
+            border-bottom: none;
+        }
+
+        .target-label {
+            font-size: 0.85rem;
+            color: #2c3e50;
+            font-weight: 500;
+        }
+
+        .target-input {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .target-input input {
+            width: 60px;
+            padding: 4px 8px;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+
+        .target-input span {
+            font-size: 0.85rem;
+            color: #7f8c8d;
+        }
+
+        .performance-indicator {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .above-target {
+            background: #d5f5d5;
+            color: #27ae60;
+        }
+
+        .below-target {
+            background: #ffeaa7;
+            color: #e17055;
+        }
+
+        .detailed-table {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            overflow-x: auto;
+        }
+
+        .detailed-table h3 {
+            color: #2d5a27;
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        th {
+            background: #f8f9fa;
+            color: #2d5a27;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4a7c59;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .export-btn {
+            background: #4a7c59;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.3s ease;
+        }
+
+        .export-btn:hover {
+            background: #2d5a27;
+        }
+
+        .alert {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 20px;
+            color: #856404;
+            font-size: 0.9rem;
+        }
+
+        .breakdown-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .chart-section {
+                grid-template-columns: 1fr;
+            }
+            
+            .breakdown-section {
+                grid-template-columns: 1fr;
+            }
+
+            .header-content {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .controls {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo-section">
+                <h1>Greencare Follow-Up Dashboard</h1>
+                <p>SMS Conversion Performance & Target Tracking</p>
+            </div>
+            <div class="controls">
+                <select id="monthFilter">
+                    <option value="">All Months</option>
+                </select>
+                <button onclick="refreshData()" class="export-btn">Refresh Data</button>
+                <button onclick="exportData()" class="export-btn">Export CSV</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div id="loadingIndicator" class="loading">
+            <div class="loading-spinner"></div>
+            Loading data...
+        </div>
+
+        <div id="alertSection"></div>
+
+        <div id="dashboardContent" style="display: none;">
+            <div class="summary-cards">
+                <div class="card">
+                    <h3>Total Reminders Sent</h3>
+                    <div class="value" id="totalReminders">-</div>
+                    <div class="subtitle">This period</div>
+                </div>
+                <div class="card">
+                    <h3>Total Conversions</h3>
+                    <div class="value" id="totalConversions">-</div>
+                    <div class="subtitle">Within 30 days</div>
+                </div>
+                <div class="card">
+                    <h3>Overall Conversion Rate</h3>
+                    <div class="value" id="overallRate">-</div>
+                    <div class="subtitle">All touchpoints</div>
+                </div>
+                <div class="card">
+                    <h3>Best Performing Touchpoint</h3>
+                    <div class="value" id="bestTouchpoint">-</div>
+                    <div class="subtitle">Highest conversion rate</div>
+                </div>
+            </div>
+
+            <div class="chart-section">
+                <div class="chart-container">
+                    <h3>Conversion Rates by Touchpoint</h3>
+                    <canvas id="conversionChart"></canvas>
+                </div>
+                <div class="targets-section">
+                    <h3>Monthly Targets</h3>
+                    <div id="targetsContainer"></div>
+                </div>
+            </div>
+
+            <div class="breakdown-section">
+                <div class="chart-container">
+                    <h3>Conversions by Booking Source</h3>
+                    <canvas id="sourceChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>Monthly Trend</h3>
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+
+            <div class="detailed-table">
+                <h3>Detailed Touchpoint Performance</h3>
+                <table id="detailTable">
+                    <thead>
+                        <tr>
+                            <th>Touchpoint</th>
+                            <th>Reminders Sent</th>
+                            <th>Conversions</th>
+                            <th>Rate</th>
+                            <th>Target</th>
+                            <th>Performance</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let rawData = [];
+        let processedData = {};
+        let targets = JSON.parse(localStorage.getItem('conversionTargets') || '{}');
+        
+        // Touchpoint definitions
+        const touchpoints = {
+            '2 Weeks': { baseField: 'FIRSTAPPOINTMENT', days: 14 },
+            '6 Weeks': { baseField: 'FIRSTAPPOINTMENT', days: 42 },
+            '3 Months': { baseField: 'LASTAPPOINTMENT', days: 90 },
+            '5 Months': { baseField: 'LASTAPPOINTMENT', days: 150 },
+            'Script Expiry (6M)': { baseField: 'LASTAPPOINTMENT', days: 175 },
+            '8 Months': { baseField: 'LASTAPPOINTMENT', days: 240 },
+            '12 Months': { baseField: 'LASTAPPOINTMENT', days: 365 },
+            '18 Months': { baseField: 'LASTAPPOINTMENT', days: 545 },
+            '24 Months': { baseField: 'LASTAPPOINTMENT', days: 730 }
+        };
+
+        // Initialize dashboard
+        async function init() {
+            setupMonthFilter();
+            await loadData();
+            setupTargets();
+        }
+
+        // Load and parse CSV data
+        async function loadData() {
+            try {
+                const response = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vR0aMS5opoqMJG2BGhIy5Wet_7v6CtiWRbIrUsV3zMzNTnKasJnKsD7ooMd_u9bi7eDAIbYN5_ysXYl/pub?output=csv');
+                const csvText = await response.text();
+                
+                // Parse CSV
+                const lines = csvText.split('\n');
+                const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+                
+                rawData = [];
+                for (let i = 1; i < lines.length; i++) {
+                    if (lines[i].trim()) {
+                        const values = parseCSVLine(lines[i]);
+                        const row = {};
+                        headers.forEach((header, index) => {
+                            row[header] = values[index] || '';
+                        });
+                        rawData.push(row);
+                    }
+                }
+                
+                console.log('Data loaded:', rawData.length, 'records');
+                processData();
+                renderDashboard();
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showAlert('Error loading data. Please check the connection and try again.', 'error');
+            } finally {
+                document.getElementById('loadingIndicator').style.display = 'none';
+            }
+        }
+
+        // Parse CSV line handling quotes and commas
+        function parseCSVLine(line) {
+            const values = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    values.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            values.push(current.trim());
+            return values;
+        }
+
+        // Process raw data into conversion analytics
+        function processData() {
+            const selectedMonth = document.getElementById('monthFilter').value;
+            const eighteenMonthsAgo = new Date();
+            eighteenMonthsAgo.setMonth(eighteenMonthsAgo.getMonth() - 18);
+            
+            processedData = {
+                conversions: {},
+                bySource: {},
+                byMonth: {},
+                summary: { total: 0, conversions: 0, rate: 0 }
+            };
+
+            // Initialize touchpoint data
+            Object.keys(touchpoints).forEach(tp => {
+                processedData.conversions[tp] = { sent: 0, converted: 0, rate: 0 };
+            });
+
+            // Group patients by ID
+            const patients = {};
+            rawData.forEach(row => {
+                const id = row.INTERNALID;
+                if (!patients[id]) patients[id] = [];
+                patients[id].push(row);
+            });
+
+            // Process each patient's conversion journey
+            Object.values(patients).forEach(patientRecords => {
+                // Sort by appointment date
+                patientRecords.sort((a, b) => new Date(a.APPOINTMENTDATE) - new Date(b.APPOINTMENTDATE));
+                
+                const firstAppt = patientRecords.find(r => r.APPOINTMENTTYPE === 'Initial');
+                const lastAppt = patientRecords[patientRecords.length - 1];
+                
+                if (!firstAppt) return;
+
+                // Check each touchpoint
+                Object.entries(touchpoints).forEach(([name, config]) => {
+                    const baseDate = config.baseField === 'FIRSTAPPOINTMENT' ? 
+                        new Date(firstAppt.APPOINTMENTDATE) : 
+                        new Date(lastAppt.APPOINTMENTDATE);
+                    
+                    if (isNaN(baseDate.getTime())) return;
+                    
+                    const reminderDate = new Date(baseDate);
+                    reminderDate.setDate(reminderDate.getDate() + config.days);
+                    
+                    // Filter by month if selected
+                    const reminderMonth = `${reminderDate.getFullYear()}-${String(reminderDate.getMonth() + 1).padStart(2, '0')}`;
+                    if (selectedMonth && selectedMonth !== reminderMonth) return;
+                    
+                    // Only process reminders from last 18 months
+                    if (reminderDate < eighteenMonthsAgo) return;
+                    
+                    processedData.conversions[name].sent++;
+                    
+                    // Check for conversion within 30 days
+                    const conversionWindow = new Date(reminderDate);
+                    conversionWindow.setDate(conversionWindow.getDate() + 30);
+                    
+                    const conversion = patientRecords.find(record => {
+                        const apptDate = new Date(record.APPOINTMENTDATE);
+                        return apptDate >= reminderDate && apptDate <= conversionWindow;
+                    });
+                    
+                    if (conversion) {
+                        processedData.conversions[name].converted++;
+                        
+                        // Track by source
+                        const source = conversion.BOOKEDBY || 'Online';
+                        if (!processedData.bySource[source]) processedData.bySource[source] = 0;
+                        processedData.bySource[source]++;
+                        
+                        // Track by month
+                        if (!processedData.byMonth[reminderMonth]) processedData.byMonth[reminderMonth] = 0;
+                        processedData.byMonth[reminderMonth]++;
+                    }
+                });
+            });
+
+            // Calculate conversion rates
+            let totalSent = 0, totalConverted = 0;
+            Object.keys(processedData.conversions).forEach(tp => {
+                const data = processedData.conversions[tp];
+                data.rate = data.sent > 0 ? (data.converted / data.sent * 100) : 0;
+                totalSent += data.sent;
+                totalConverted += data.converted;
+            });
+
+            processedData.summary = {
+                total: totalSent,
+                conversions: totalConverted,
+                rate: totalSent > 0 ? (totalConverted / totalSent * 100) : 0
+            };
+
+            console.log('Processed data:', processedData);
+        }
+
+        // Render all dashboard components
+        function renderDashboard() {
+            document.getElementById('dashboardContent').style.display = 'block';
+            
+            renderSummaryCards();
+            renderConversionChart();
+            renderSourceChart();
+            renderTrendChart();
+            renderDetailTable();
+            checkPerformanceAlerts();
+        }
+
+        // Render summary cards
+        function renderSummaryCards() {
+            const { summary, conversions } = processedData;
+            
+            document.getElementById('totalReminders').textContent = summary.total.toLocaleString();
+            document.getElementById('totalConversions').textContent = summary.conversions.toLocaleString();
+            document.getElementById('overallRate').textContent = summary.rate.toFixed(1) + '%';
+            
+            // Find best performing touchpoint
+            let bestTouchpoint = '';
+            let bestRate = 0;
+            Object.entries(conversions).forEach(([name, data]) => {
+                if (data.rate > bestRate && data.sent > 0) {
+                    bestRate = data.rate;
+                    bestTouchpoint = name;
+                }
+            });
+            
+            document.getElementById('bestTouchpoint').textContent = bestTouchpoint || 'N/A';
+        }
+
+        // Render conversion rate chart
+        function renderConversionChart() {
+            const ctx = document.getElementById('conversionChart').getContext('2d');
+            const data = processedData.conversions;
+            
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(data),
+                    datasets: [{
+                        label: 'Conversion Rate (%)',
+                        data: Object.values(data).map(d => d.rate),
+                        backgroundColor: 'rgba(74, 124, 89, 0.7)',
+                        borderColor: 'rgba(45, 90, 39, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const touchpoint = context.label;
+                                    const tpData = data[touchpoint];
+                                    return `${context.parsed.y.toFixed(1)}% (${tpData.converted}/${tpData.sent})`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render source breakdown chart
+        function renderSourceChart() {
+            const ctx = document.getElementById('sourceChart').getContext('2d');
+            const data = processedData.bySource;
+            
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(data),
+                    datasets: [{
+                        data: Object.values(data),
+                        backgroundColor: [
+                            'rgba(74, 124, 89, 0.8)',
+                            'rgba(120, 180, 120, 0.8)',
+                            'rgba(45, 90, 39, 0.8)',
+                            'rgba(100, 150, 100, 0.8)',
+                            'rgba(150, 200, 150, 0.8)'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render monthly trend chart
+        function renderTrendChart() {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            const data = processedData.byMonth;
+            
+            // Sort months chronologically
+            const sortedMonths = Object.keys(data).sort();
+            
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: sortedMonths,
+                    datasets: [{
+                        label: 'Conversions',
+                        data: sortedMonths.map(month => data[month]),
+                        borderColor: 'rgba(74, 124, 89, 1)',
+                        backgroundColor: 'rgba(74, 124, 89, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render detailed performance table
+        function renderDetailTable() {
+            const tbody = document.querySelector('#detailTable tbody');
+            tbody.innerHTML = '';
+            
+            Object.entries(processedData.conversions).forEach(([name, data]) => {
+                const target = targets[name] || 0;
+                const performance = data.rate - target;
+                const performanceClass = performance >= 0 ? 'above-target' : 'below-target';
+                const performanceText = performance >= 0 ? `+${performance.toFixed(1)}%` : `${performance.toFixed(1)}%`;
+                
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${name}</td>
+                    <td>${data.sent.toLocaleString()}</td>
+                    <td>${data.converted.toLocaleString()}</td>
+                    <td>${data.rate.toFixed(1)}%</td>
+                    <td>${target}%</td>
+                    <td>
+                        ${data.rate.toFixed(1)}%
+                        <span class="performance-indicator ${performanceClass}">
+                            ${performanceText}
+                        </span>
+                    </td>
+                `;
+            });
+        }
+
+        // Setup targets section
+        function setupTargets() {
+            const container = document.getElementById('targetsContainer');
+            container.innerHTML = '';
+            
+            Object.keys(touchpoints).forEach(name => {
+                const targetItem = document.createElement('div');
+                targetItem.className = 'target-item';
+                
+                const currentTarget = targets[name] || 0;
+                
+                targetItem.innerHTML = `
+                    <div class="target-label">${name}</div>
+                    <div class="target-input">
+                        <input type="number" min="0" max="100" value="${currentTarget}" 
+                               onchange="updateTarget('${name}', this.value)">
+                        <span>%</span>
+                    </div>
+                `;
+                
+                container.appendChild(targetItem);
+            });
+        }
+
+        // Update target value
+        function updateTarget(touchpoint, value) {
+            targets[touchpoint] = parseFloat(value) || 0;
+            localStorage.setItem('conversionTargets', JSON.stringify(targets));
+            renderDetailTable(); // Refresh table with new targets
+        }
+
+        // Setup month filter dropdown
+        function setupMonthFilter() {
+            const select = document.getElementById('monthFilter');
+            const months = [];
+            
+            // Generate last 18 months
+            for (let i = 0; i < 18; i++) {
+                const date = new Date();
+                date.setMonth(date.getMonth() - i);
+                const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                const displayStr = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+                months.push({ value: monthStr, display: displayStr });
+            }
+            
+            months.forEach(month => {
+                const option = document.createElement('option');
+                option.value = month.value;
+                option.textContent = month.display;
+                select.appendChild(option);
+            });
+            
+            select.addEventListener('change', () => {
+                processData();
+                renderDashboard();
+            });
+        }
+
+        // Check for performance alerts
+        function checkPerformanceAlerts() {
+            const alertSection = document.getElementById('alertSection');
+            alertSection.innerHTML = '';
+            
+            const underperforming = [];
+            Object.entries(processedData.conversions).forEach(([name, data]) => {
+                const target = targets[name] || 0;
+                if (target > 0 && data.rate < target * 0.8) { // Alert if <80% of target
+                    underperforming.push(name);
+                }
+            });
+            
+            if (underperforming.length > 0) {
+                showAlert(`Alert: ${underperforming.join(', ')} ${underperforming.length === 1 ? 'is' : 'are'} underperforming compared to targets.`, 'warning');
+            }
+        }
+
+        // Show alert message
+        function showAlert(message, type = 'info') {
+            const alertSection = document.getElementById('alertSection');
+            const alert = document.createElement('div');
+            alert.className = 'alert';
+            alert.textContent = message;
+            alertSection.appendChild(alert);
+        }
+
+        // Refresh data
+        async function refreshData() {
+            document.getElementById('loadingIndicator').style.display = 'block';
+            document.getElementById('dashboardContent').style.display = 'none';
+            await loadData();
+        }
+
+        // Export data to CSV
+        function exportData() {
+            const csvContent = generateCSVReport();
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `greencare-conversion-report-${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        // Generate CSV report
+        function generateCSVReport() {
+            let csv = 'Touchpoint,Reminders Sent,Conversions,Conversion Rate,Target,Performance\n';
+            
+            Object.entries(processedData.conversions).forEach(([name, data]) => {
+                const target = targets[name] || 0;
+                const performance = data.rate - target;
+                csv += `"${name}",${data.sent},${data.converted},${data.rate.toFixed(1)}%,${target}%,${performance.toFixed(1)}%\n`;
+            });
+            
+            return csv;
+        }
+
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
