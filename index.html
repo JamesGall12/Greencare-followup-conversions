@@ -837,12 +837,15 @@
                 
                 if (!firstAppointment || !lastAppointment) return;
 
-                // Debug first few patients
-                if (processedPatients <= 3) {
+                // Debug first few patients in more detail
+                if (processedPatients <= 2) {
                     showDebug(`=== PATIENT ${patientId} ===`);
                     showDebug(`  ${appointments.length} appointments`);
-                    showDebug(`  First: ${firstAppointment.date.toISOString().split('T')[0]} (${firstAppointment.type})`);
-                    showDebug(`  Last: ${lastAppointment.date.toISOString().split('T')[0]} (${lastAppointment.type})`);
+                    appointments.forEach((appt, idx) => {
+                        showDebug(`    ${idx + 1}. ${appt.date.toISOString().split('T')[0]} (${appt.type}) booked by: ${appt.bookedBy}`);
+                    });
+                    showDebug(`  First: ${firstAppointment.date.toISOString().split('T')[0]}`);
+                    showDebug(`  Last: ${lastAppointment.date.toISOString().split('T')[0]}`);
                 }
 
                 // Check each touchpoint for this patient
