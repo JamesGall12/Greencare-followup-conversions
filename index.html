@@ -531,11 +531,35 @@
             document.getElementById('dashboardContent').style.display = 'none';
         }
 
-        // Parse date safely
+        // Parse date safely - handle DD/MM/YYYY HH:MM:SS format specifically
         function parseDate(dateStr) {
             if (!dateStr || dateStr === '') return null;
+            
+            // Remove any extra whitespace
+            dateStr = dateStr.trim();
+            
+            // Handle "DD/MM/YYYY HH:MM:SS" format specifically
+            if (dateStr.includes('/') && dateStr.includes(' ')) {
+                const datePart = dateStr.split(' ')[0]; // Take just "DD/MM/YYYY"
+                const [day, month, year] = datePart.split('/');
+                if (day && month && year && day.length <= 2 && month.length <= 2 && year.length === 4) {
+                    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                    if (!isNaN(date.getTime())) {
+                        showDebug(`Parsed date: ${dateStr} -> ${date.toISOString().split('T')[0]}`);
+                        return date;
+                    }
+                }
+            }
+            
+            // Fallback to standard parsing
             const date = new Date(dateStr);
-            return isNaN(date.getTime()) ? null : date;
+            if (!isNaN(date.getTime())) {
+                showDebug(`Fallback parsed: ${dateStr} -> ${date.toISOString().split('T')[0]}`);
+                return date;
+            }
+            
+            showDebug(`Failed to parse date: ${dateStr}`);
+            return null;
         }
 
         // Enhanced CSV parser with better column detection
@@ -779,7 +803,8 @@
                         type: row.APPOINTMENTTYPE,
                         bookedBy: row.BOOKEDBY || 'Online',
                         firstAppt: parseDate(row.FIRSTAPPOINTMENT),
-                        lastAppt: parseDate(row.LASTAPPOINTMENT)
+                        lastAppt: parseDate(row.LASTAPPOINTMENT),
+                        raw: row // Keep raw data for debugging
                     });
                 }
             });
@@ -801,10 +826,19 @@
                 // Sort appointments by date
                 appointments.sort((a, b) => a.date - b.date);
                 
-                const firstAppointment = appointments.find(a => a.type === 'Initial');
+                // Find first appointment - look for "Initial" or first appointment chronologically
+                let firstAppointment = appointments.find(a => a.type && a.type.toLowerCase().includes('initial'));
+                if (!firstAppointment) {
+                    // If no "Initial" type found, use the first appointment chronologically
+                    firstAppointment = appointments[0];
+                }
+                
                 const lastAppointment = appointments[appointments.length - 1];
                 
-                if (!firstAppointment || !lastAppointment) return;
+                if (!firstAppointment || !lastAppointment) {
+                    showDebug(`Patient ${patientId}: Missing first or last appointment`);
+                    return;
+                }
 
                 // Check each touchpoint for this patient
                 Object.entries(touchpoints).forEach(([touchpointName, config]) => {
@@ -878,11 +912,32 @@
                 }
             });
 
-            // Show sample patients processed
-            const samplePatients = Object.keys(patientData).slice(0, 3);
+            // Show sample patients processed with more detail
+            const samplePatients = Object.keys(patientData).slice(0, 5);
             samplePatients.forEach(patientId => {
                 const appts = patientData[patientId];
-                showDebug(`Sample patient ${patientId}: ${appts.length} appointments, first: ${appts[0]?.date?.toISOString()?.split('T')[0]}, last: ${appts[appts.length-1]?.date?.toISOString()?.split('T')[0]}`);
+                const firstAppt = appts.find(a => a.type && a.type.toLowerCase().includes('initial')) || appts[0];
+                const lastAppt = appts[appts.length - 1];
+                showDebug(`Patient ${patientId}: ${appts.length} appointments`);
+                if (firstAppt) showDebug(`  First: ${firstAppt.date?.toISOString()?.split('T')[0]} (${firstAppt.type})`);
+                if (lastAppt) showDebug(`  Last: ${lastAppt.date?.toISOString()?.split('T')[0]} (${lastAppt.type})`);
+                
+                // Show what reminders would be calculated for this patient
+                Object.entries(touchpoints).forEach(([touchpointName, config]) => {
+                    const baseDate = config.baseField === 'FIRSTAPPOINTMENT' ? firstAppt?.date : lastAppt?.date;
+                    if (baseDate) {
+                        const reminderDate = new Date(baseDate);
+                        reminderDate.setDate(reminderDate.getDate() + config.days);
+                        const reminderMonth = `${reminderDate.getFullYear()}-${String(reminderDate.getMonth() + 1).padStart(2, '0')}`;
+                        
+                        // Only show recent reminders
+                        const now = new Date();
+                        const monthsAgo = (now.getFullYear() - reminderDate.getFullYear()) * 12 + (now.getMonth() - reminderDate.getMonth());
+                        if (monthsAgo <= 18 && monthsAgo >= 0) {
+                            showDebug(`  ${touchpointName} reminder would be sent: ${reminderMonth}`);
+                        }
+                    }
+                });
             });
         }
 
