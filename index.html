@@ -548,7 +548,7 @@
                 showDebug(`Found ${headers.length} columns: ${headers.slice(0, 5).join(', ')}...`);
                 
                 const data = [];
-                for (let i = 1; i < Math.min(lines.length, 1000); i++) { // Limit to 1000 rows for performance
+                for (let i = 1; i < lines.length; i++) { // Process ALL rows, not just first 1000
                     const values = lines[i].split(',');
                     if (values.length >= headers.length) {
                         const row = {};
@@ -560,6 +560,11 @@
                         if (row.INTERNALID && row.APPOINTMENTDATE) {
                             data.push(row);
                         }
+                    }
+                    
+                    // Update progress every 100 rows
+                    if (i % 100 === 0) {
+                        updateProgress(50 + (i / lines.length) * 20, `Parsing row ${i}...`);
                     }
                 }
                 
@@ -638,11 +643,9 @@
             });
         }
 
-        // Simplified data processing
+        // Correct business logic for processing data
         function processData() {
             const selectedMonth = document.getElementById('monthFilter').value;
-            const eighteenMonthsAgo = new Date();
-            eighteenMonthsAgo.setMonth(eighteenMonthsAgo.getMonth() - 18);
             
             processedData = {
                 conversions: {},
@@ -656,29 +659,99 @@
                 processedData.conversions[tp] = { sent: 0, converted: 0, rate: 0 };
             });
 
-            // Simple processing for performance
-            const sampleData = rawData.slice(0, 100); // Process first 100 records for demo
-            
-            sampleData.forEach((row, index) => {
-                if (index % 10 === 0) { // Update progress every 10 rows
-                    updateProgress(70 + (index / sampleData.length) * 20, `Processing record ${index + 1}...`);
+            showDebug(`Processing ${rawData.length} records for conversion analysis...`);
+
+            // Group all appointments by patient ID
+            const patientData = {};
+            rawData.forEach(row => {
+                const patientId = row.INTERNALID;
+                if (!patientId) return;
+
+                if (!patientData[patientId]) {
+                    patientData[patientId] = [];
                 }
                 
-                // Simulate touchpoint data for demo
-                const touchpointNames = Object.keys(touchpoints);
-                const randomTouchpoint = touchpointNames[Math.floor(Math.random() * touchpointNames.length)];
-                
-                processedData.conversions[randomTouchpoint].sent++;
-                
-                if (Math.random() > 0.7) { // 30% conversion rate simulation
-                    processedData.conversions[randomTouchpoint].converted++;
-                    
-                    const source = row.BOOKEDBY || 'Online';
-                    processedData.bySource[source] = (processedData.bySource[source] || 0) + 1;
+                const appointmentDate = parseDate(row.APPOINTMENTDATE);
+                if (appointmentDate) {
+                    patientData[patientId].push({
+                        date: appointmentDate,
+                        type: row.APPOINTMENTTYPE,
+                        bookedBy: row.BOOKEDBY || 'Online',
+                        firstAppt: parseDate(row.FIRSTAPPOINTMENT),
+                        lastAppt: parseDate(row.LASTAPPOINTMENT)
+                    });
                 }
             });
 
-            // Calculate rates
+            showDebug(`Found ${Object.keys(patientData).length} unique patients`);
+
+            // Process each patient for touchpoint analysis
+            let processedPatients = 0;
+            Object.entries(patientData).forEach(([patientId, appointments]) => {
+                processedPatients++;
+                
+                if (processedPatients % 50 === 0) {
+                    updateProgress(70 + (processedPatients / Object.keys(patientData).length) * 20, 
+                        `Processing patient ${processedPatients}...`);
+                }
+
+                // Sort appointments by date
+                appointments.sort((a, b) => a.date - b.date);
+                
+                const firstAppointment = appointments.find(a => a.type === 'Initial');
+                const lastAppointment = appointments[appointments.length - 1];
+                
+                if (!firstAppointment || !lastAppointment) return;
+
+                // Check each touchpoint for this patient
+                Object.entries(touchpoints).forEach(([touchpointName, config]) => {
+                    // Determine base date for this touchpoint
+                    const baseDate = config.baseField === 'FIRSTAPPOINTMENT' ? 
+                        firstAppointment.date : lastAppointment.date;
+                    
+                    if (!baseDate) return;
+
+                    // Calculate when the reminder would be sent
+                    const reminderDate = new Date(baseDate);
+                    reminderDate.setDate(reminderDate.getDate() + config.days);
+                    
+                    const reminderMonth = `${reminderDate.getFullYear()}-${String(reminderDate.getMonth() + 1).padStart(2, '0')}`;
+                    
+                    // If we're filtering by month, only process reminders for that month
+                    if (selectedMonth && selectedMonth !== reminderMonth) return;
+                    
+                    // Only count reminders from the last 18 months
+                    const eighteenMonthsAgo = new Date();
+                    eighteenMonthsAgo.setMonth(eighteenMonthsAgo.getMonth() - 18);
+                    if (reminderDate < eighteenMonthsAgo) return;
+
+                    // This patient was eligible for a reminder on this date
+                    processedData.conversions[touchpointName].sent++;
+                    
+                    // Check for conversion within 30 days after reminder
+                    const conversionWindowEnd = new Date(reminderDate);
+                    conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
+                    
+                    // Look for any appointment within the conversion window
+                    const conversion = appointments.find(appointment => {
+                        return appointment.date >= reminderDate && 
+                               appointment.date <= conversionWindowEnd;
+                    });
+                    
+                    if (conversion) {
+                        processedData.conversions[touchpointName].converted++;
+                        
+                        // Track by booking source
+                        const source = conversion.bookedBy;
+                        processedData.bySource[source] = (processedData.bySource[source] || 0) + 1;
+                        
+                        // Track by month
+                        processedData.byMonth[reminderMonth] = (processedData.byMonth[reminderMonth] || 0) + 1;
+                    }
+                });
+            });
+
+            // Calculate conversion rates
             let totalSent = 0, totalConverted = 0;
             Object.keys(processedData.conversions).forEach(tp => {
                 const data = processedData.conversions[tp];
@@ -693,55 +766,86 @@
                 rate: totalSent > 0 ? (totalConverted / totalSent * 100) : 0
             };
 
-            showDebug(`Processed ${sampleData.length} records, found ${totalConverted} conversions`);
+            showDebug(`Analysis complete: ${totalSent} reminders sent, ${totalConverted} conversions found`);
+            
+            // Show breakdown by touchpoint
+            Object.entries(processedData.conversions).forEach(([name, data]) => {
+                if (data.sent > 0) {
+                    showDebug(`${name}: ${data.sent} sent, ${data.converted} converted (${data.rate.toFixed(1)}%)`);
+                }
+            });
         }
 
-        // Load sample data for testing
+        // Load sample data for testing - more realistic version
         function loadSampleData() {
             showLoading();
-            updateProgress(20, 'Generating sample data...');
+            updateProgress(20, 'Generating realistic sample data...');
             
-            // Generate realistic sample data
+            // Generate realistic sample data that follows your business logic
             rawData = [];
-            const samplePatients = 50;
+            const samplePatients = 200;
             
             for (let i = 1; i <= samplePatients; i++) {
-                const baseDate = new Date();
-                baseDate.setDate(baseDate.getDate() - Math.random() * 365);
+                const patientId = `P${i.toString().padStart(3, '0')}`;
                 
+                // Generate initial appointment (first appointment)
+                const initialDate = new Date();
+                initialDate.setDate(initialDate.getDate() - Math.random() * 730); // Up to 2 years ago
+                
+                // Add initial appointment
                 rawData.push({
-                    INTERNALID: `P${i.toString().padStart(3, '0')}`,
-                    APPOINTMENTDATE: baseDate.toISOString().split('T')[0],
+                    INTERNALID: patientId,
+                    APPOINTMENTDATE: initialDate.toISOString().split('T')[0],
                     APPOINTMENTTYPE: 'Initial',
-                    FIRSTAPPOINTMENT: baseDate.toISOString().split('T')[0],
-                    LASTAPPOINTMENT: baseDate.toISOString().split('T')[0],
-                    BOOKEDBY: Math.random() > 0.5 ? ['Dr Smith', 'Dr Johnson', 'Nurse Kate'][Math.floor(Math.random() * 3)] : ''
+                    FIRSTAPPOINTMENT: initialDate.toISOString().split('T')[0],
+                    LASTAPPOINTMENT: initialDate.toISOString().split('T')[0],
+                    BOOKEDBY: Math.random() > 0.4 ? ['Dr Smith', 'Dr Johnson', 'Nurse Kate'][Math.floor(Math.random() * 3)] : ''
                 });
                 
-                // Add follow-up appointments randomly
-                if (Math.random() > 0.6) {
-                    const followUpDate = new Date(baseDate);
-                    followUpDate.setDate(followUpDate.getDate() + 30 + Math.random() * 60);
+                // Generate follow-up appointments with realistic timing
+                let lastApptDate = new Date(initialDate);
+                const numFollowUps = Math.floor(Math.random() * 4); // 0-3 follow-ups
+                
+                for (let j = 0; j < numFollowUps; j++) {
+                    // Follow-ups typically happen every 3-6 months
+                    const daysSinceLastAppt = 90 + Math.random() * 90; // 3-6 months
+                    const followUpDate = new Date(lastApptDate);
+                    followUpDate.setDate(followUpDate.getDate() + daysSinceLastAppt);
+                    
+                    // Don't create future appointments
+                    if (followUpDate > new Date()) break;
                     
                     rawData.push({
-                        INTERNALID: `P${i.toString().padStart(3, '0')}`,
+                        INTERNALID: patientId,
                         APPOINTMENTDATE: followUpDate.toISOString().split('T')[0],
                         APPOINTMENTTYPE: 'Follow',
-                        FIRSTAPPOINTMENT: baseDate.toISOString().split('T')[0],
+                        FIRSTAPPOINTMENT: initialDate.toISOString().split('T')[0],
                         LASTAPPOINTMENT: followUpDate.toISOString().split('T')[0],
-                        BOOKEDBY: Math.random() > 0.5 ? ['Dr Smith', 'Dr Johnson', 'Nurse Kate'][Math.floor(Math.random() * 3)] : ''
+                        BOOKEDBY: Math.random() > 0.4 ? ['Dr Smith', 'Dr Johnson', 'Nurse Kate'][Math.floor(Math.random() * 3)] : ''
                     });
+                    
+                    lastApptDate = followUpDate;
                 }
+                
+                // Update all records for this patient with the actual last appointment date
+                const patientRecords = rawData.filter(r => r.INTERNALID === patientId);
+                const actualLastDate = Math.max(...patientRecords.map(r => new Date(r.APPOINTMENTDATE)));
+                patientRecords.forEach(record => {
+                    record.LASTAPPOINTMENT = new Date(actualLastDate).toISOString().split('T')[0];
+                });
             }
             
-            updateProgress(50, 'Processing sample data...');
+            updateProgress(50, 'Processing sample data with real business logic...');
+            showDebug(`Generated ${rawData.length} appointment records for ${samplePatients} patients`);
+            
+            // Process with the real logic
             processData();
             
             updateProgress(80, 'Rendering dashboard...');
             renderDashboard();
             
-            updateProgress(100, 'Sample data loaded!');
-            showAlert('Sample data loaded successfully. This shows how the dashboard will look with real data.', 'info');
+            updateProgress(100, 'Sample data loaded with real calculations!');
+            showAlert('Sample data loaded successfully using your actual business logic. Numbers should now be realistic.', 'info');
             
             setTimeout(hideLoading, 500);
         }
@@ -970,7 +1074,54 @@
         }
 
         function exportData() {
-            showAlert('Export functionality coming soon!', 'info');
+            if (!processedData || Object.keys(processedData.conversions).length === 0) {
+                showAlert('No data to export. Please load data first.', 'error');
+                return;
+            }
+            
+            const csvContent = generateCSVReport();
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `greencare-conversion-report-${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            showAlert('Report exported successfully!', 'info');
+        }
+
+        // Generate CSV report
+        function generateCSVReport() {
+            const selectedMonth = document.getElementById('monthFilter').value;
+            const monthText = selectedMonth ? ` for ${selectedMonth}` : '';
+            
+            let csv = `Greencare Follow-Up Conversion Report${monthText}\n`;
+            csv += `Generated: ${new Date().toLocaleString()}\n\n`;
+            csv += 'Touchpoint,Reminders Sent,Conversions,Conversion Rate,Target,Performance vs Target\n';
+            
+            Object.entries(processedData.conversions).forEach(([name, data]) => {
+                const target = targets[name] || 0;
+                const performance = data.rate - target;
+                csv += `"${name}",${data.sent},${data.converted},${data.rate.toFixed(1)}%,${target}%,${performance.toFixed(1)}%\n`;
+            });
+            
+            csv += '\nSummary\n';
+            csv += `Total Reminders Sent,${processedData.summary.total}\n`;
+            csv += `Total Conversions,${processedData.summary.conversions}\n`;
+            csv += `Overall Conversion Rate,${processedData.summary.rate.toFixed(1)}%\n`;
+            
+            if (Object.keys(processedData.bySource).length > 0) {
+                csv += '\nConversions by Booking Source\n';
+                Object.entries(processedData.bySource).forEach(([source, count]) => {
+                    csv += `${source || 'Online'},${count}\n`;
+                });
+            }
+            
+            return csv;
         }
 
         // Initialize
