@@ -765,7 +765,7 @@
             });
         }
 
-        // Correct approach following the step-by-step analysis logic
+        // Follow the exact step-by-step analysis logic
         function processData() {
             const selectedMonth = document.getElementById('monthFilter').value;
             
@@ -785,12 +785,12 @@
             showDebug(`Processing ${rawData.length} appointment records...`);
             showDebug(`Selected month filter: ${selectedMonth || 'All months'}`);
 
-            // STEP 1 & 2: Identify patients and list their appointments
+            // STEP 1: Identify patients and group by INTERNALID
             const patientAppointments = {};
             
             rawData.forEach(row => {
-                const patientId = row.INTERNALID; // Column A
-                const appointmentDate = parseDate(row.APPOINTMENTDATE); // Column J
+                const patientId = row.INTERNALID;
+                const appointmentDate = parseDate(row.APPOINTMENTDATE);
                 
                 if (!patientId || !appointmentDate) return;
                 
@@ -798,6 +798,7 @@
                     patientAppointments[patientId] = [];
                 }
                 
+                // STEP 2: List their appointments from Column J
                 patientAppointments[patientId].push({
                     date: appointmentDate,
                     type: row.APPOINTMENTTYPE,
@@ -807,19 +808,10 @@
 
             showDebug(`STEP 1-2: Found ${Object.keys(patientAppointments).length} unique patients`);
 
-            // Show current date for reference
-            const now = new Date();
-            showDebug(`Current date: ${now.toISOString().split('T')[0]}`);
-            
-            // Show 18 months ago cutoff
-            const eighteenMonthsAgo = new Date();
-            eighteenMonthsAgo.setMonth(eighteenMonthsAgo.getMonth() - 18);
-            showDebug(`18 months ago cutoff: ${eighteenMonthsAgo.toISOString().split('T')[0]}`);
-
             let processedPatients = 0;
-            let totalRemindersThisMonth = 0;
+            let totalRemindersInMonth = 0;
             
-            // Process each patient's appointment journey
+            // Process each patient
             Object.entries(patientAppointments).forEach(([patientId, appointments]) => {
                 processedPatients++;
                 
@@ -828,93 +820,86 @@
                         `Processing patient ${processedPatients}...`);
                 }
 
-                // STEP 2: Sort appointments chronologically (oldest to newest)
+                // STEP 3: Sort appointments chronologically (oldest to newest)
                 appointments.sort((a, b) => a.date - b.date);
                 
-                // STEP 3: Determine first & last appointment
-                const firstAppointment = appointments[0]; // Earliest date
-                const lastAppointment = appointments[appointments.length - 1]; // Latest date
+                // STEP 4: Determine first & last appointment
+                const firstAppointment = appointments[0];          // Earliest date
+                const lastAppointment = appointments[appointments.length - 1];  // Latest date
                 
                 if (!firstAppointment || !lastAppointment) return;
 
-                // Debug first few patients following the exact steps
+                // Debug first few patients
                 if (processedPatients <= 2) {
-                    showDebug(`\n=== PATIENT ${patientId} ANALYSIS ===`);
-                    showDebug(`STEP 2: ${appointments.length} appointments (sorted chronologically):`);
+                    showDebug(`=== PATIENT ${patientId} ===`);
+                    showDebug(`STEP 2-3: ${appointments.length} appointments (sorted):`);
                     appointments.forEach((appt, idx) => {
                         showDebug(`  ${idx + 1}. ${appt.date.toISOString().split('T')[0]} (${appt.type})`);
                     });
-                    showDebug(`STEP 3: First appointment: ${firstAppointment.date.toISOString().split('T')[0]}`);
-                    showDebug(`STEP 3: Last appointment: ${lastAppointment.date.toISOString().split('T')[0]}`);
+                    showDebug(`STEP 4: First = ${firstAppointment.date.toISOString().split('T')[0]}, Last = ${lastAppointment.date.toISOString().split('T')[0]}`);
                 }
 
-                // STEP 4: Calculate touchpoint dates for each touchpoint
+                // STEP 5-8: Check each touchpoint
                 Object.entries(touchpoints).forEach(([touchpointName, config]) => {
-                    // Determine base date for this touchpoint
+                    // STEP 5: Calculate touchpoint date based on first or last appointment
                     const baseDate = config.baseField === 'FIRSTAPPOINTMENT' ? 
                         firstAppointment.date : lastAppointment.date;
                     
-                    // Calculate when the reminder would be sent
                     const reminderDate = new Date(baseDate);
                     reminderDate.setDate(reminderDate.getDate() + config.days);
                     
                     const reminderMonth = `${reminderDate.getFullYear()}-${String(reminderDate.getMonth() + 1).padStart(2, '0')}`;
                     
-                    // Debug touchpoint calculation for first patient
+                    // Debug first patient's touchpoint calculations
                     if (processedPatients === 1) {
-                        showDebug(`STEP 4: ${touchpointName} calculation:`);
-                        showDebug(`  Base: ${config.baseField} = ${baseDate.toISOString().split('T')[0]}`);
-                        showDebug(`  Reminder date: ${baseDate.toISOString().split('T')[0]} + ${config.days} days = ${reminderDate.toISOString().split('T')[0]}`);
+                        showDebug(`STEP 5: ${touchpointName} calculation:`);
+                        showDebug(`  Base (${config.baseField}): ${baseDate.toISOString().split('T')[0]}`);
+                        showDebug(`  + ${config.days} days = ${reminderDate.toISOString().split('T')[0]}`);
                         showDebug(`  Reminder month: ${reminderMonth}`);
                     }
                     
-                    // STEP 5: Check if touchpoint falls in selected month
-                    const monthMatches = !selectedMonth || selectedMonth === reminderMonth;
-                    const afterCutoff = reminderDate >= eighteenMonthsAgo;
-                    const inPast = reminderDate <= now;
-                    
-                    if (processedPatients === 1) {
-                        showDebug(`STEP 5: Touchpoint ${touchpointName} checks:`);
-                        showDebug(`  Falls in selected month (${selectedMonth || 'All'}): ${monthMatches}`);
-                        showDebug(`  After 18-month cutoff: ${afterCutoff}`);
-                        showDebug(`  In the past: ${inPast}`);
+                    // STEP 6: Check if touchpoint falls in selected month
+                    if (selectedMonth && selectedMonth !== reminderMonth) {
+                        if (processedPatients === 1) {
+                            showDebug(`  ❌ SKIP: Not in selected month ${selectedMonth}`);
+                        }
+                        return;
                     }
                     
-                    // Apply filters
-                    if (!monthMatches || !afterCutoff || !inPast) {
+                    // Additional filters (18 months ago, not in future)
+                    const now = new Date();
+                    const eighteenMonthsAgo = new Date();
+                    eighteenMonthsAgo.setMonth(eighteenMonthsAgo.getMonth() - 18);
+                    
+                    if (reminderDate < eighteenMonthsAgo || reminderDate > now) {
                         if (processedPatients === 1) {
-                            showDebug(`  ❌ FILTERED OUT`);
+                            showDebug(`  ❌ SKIP: Outside valid date range`);
                         }
                         return;
                     }
 
-                    // STEP 6: Count reminders sent
+                    // STEP 7: Count reminder sent
                     processedData.conversions[touchpointName].sent++;
-                    totalRemindersThisMonth++;
+                    totalRemindersInMonth++;
                     
                     if (processedPatients === 1) {
-                        showDebug(`STEP 6: ✅ REMINDER COUNTED for ${touchpointName}!`);
+                        showDebug(`  ✅ STEP 7: REMINDER SENT counted for ${touchpointName}`);
                     }
                     
-                    // STEP 7: Check for booking after reminder (0-30 days)
-                    const conversionWindowStart = new Date(reminderDate);
+                    // STEP 8: Check for booking within 0-30 days after reminder
                     const conversionWindowEnd = new Date(reminderDate);
                     conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
                     
                     if (processedPatients === 1) {
-                        showDebug(`STEP 7: Check for booking within 0-30 days after reminder:`);
-                        showDebug(`  Conversion window: ${conversionWindowStart.toISOString().split('T')[0]} to ${conversionWindowEnd.toISOString().split('T')[0]}`);
+                        showDebug(`  STEP 8: Conversion window = ${reminderDate.toISOString().split('T')[0]} to ${conversionWindowEnd.toISOString().split('T')[0]}`);
                     }
                     
-                    // Look for any appointment within the conversion window
+                    // Look for any appointment within the 0-30 day window
                     const conversion = appointments.find(appointment => {
-                        const inWindow = appointment.date >= conversionWindowStart && 
-                                       appointment.date <= conversionWindowEnd;
-                        
+                        const inWindow = appointment.date >= reminderDate && appointment.date <= conversionWindowEnd;
                         if (processedPatients === 1) {
-                            showDebug(`    ${appointment.date.toISOString().split('T')[0]} (${appointment.type}): ${inWindow ? '✅ IN WINDOW' : '❌ outside'}`);
+                            showDebug(`    ${appointment.date.toISOString().split('T')[0]} ${inWindow ? '✅ IN WINDOW' : '❌ outside'}`);
                         }
-                        
                         return inWindow;
                     });
                     
@@ -922,24 +907,22 @@
                         processedData.conversions[touchpointName].converted++;
                         
                         if (processedPatients === 1) {
-                            showDebug(`STEP 7: ✅ CONVERSION FOUND: ${conversion.date.toISOString().split('T')[0]} (${conversion.type})`);
+                            showDebug(`  ✅ CONVERSION FOUND: ${conversion.date.toISOString().split('T')[0]} (${conversion.type})`);
                         }
                         
-                        // Track by booking source
+                        // Track by booking source and month
                         const source = conversion.bookedBy;
                         processedData.bySource[source] = (processedData.bySource[source] || 0) + 1;
-                        
-                        // Track by month
                         processedData.byMonth[reminderMonth] = (processedData.byMonth[reminderMonth] || 0) + 1;
                     } else if (processedPatients === 1) {
-                        showDebug(`STEP 7: ❌ NO CONVERSION (no appointment within 0-30 days)`);
+                        showDebug(`  ❌ NO CONVERSION for ${touchpointName}`);
                     }
                 });
             });
 
-            showDebug(`\n=== PROCESSING COMPLETE ===`);
+            showDebug(`\n=== ANALYSIS COMPLETE ===`);
             showDebug(`Processed ${processedPatients} patients`);
-            showDebug(`Total reminders for selected period: ${totalRemindersThisMonth}`);
+            showDebug(`Total reminders in selected period: ${totalRemindersInMonth}`);
 
             // Calculate conversion rates
             let totalSent = 0, totalConverted = 0;
@@ -956,13 +939,11 @@
                 rate: totalSent > 0 ? (totalConverted / totalSent * 100) : 0
             };
 
-            showDebug(`\n=== FINAL RESULTS ===`);
-            showDebug(`${totalSent} total reminders sent, ${totalConverted} total conversions found`);
-            
-            // Show breakdown by touchpoint
+            // Show final breakdown
+            showDebug(`\n=== RESULTS BY TOUCHPOINT ===`);
             Object.entries(processedData.conversions).forEach(([name, data]) => {
                 if (data.sent > 0) {
-                    showDebug(`${name}: ${data.sent} sent, ${data.converted} converted (${data.rate.toFixed(1)}%)`);
+                    showDebug(`${name}: ${data.sent} reminders → ${data.converted} conversions (${data.rate.toFixed(1)}%)`);
                 }
             });
 
