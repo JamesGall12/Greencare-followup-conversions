@@ -545,7 +545,6 @@
                 if (day && month && year && day.length <= 2 && month.length <= 2 && year.length === 4) {
                     const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
                     if (!isNaN(date.getTime())) {
-                        showDebug(`Parsed date: ${dateStr} -> ${date.toISOString().split('T')[0]}`);
                         return date;
                     }
                 }
@@ -554,11 +553,9 @@
             // Fallback to standard parsing
             const date = new Date(dateStr);
             if (!isNaN(date.getTime())) {
-                showDebug(`Fallback parsed: ${dateStr} -> ${date.toISOString().split('T')[0]}`);
                 return date;
             }
             
-            showDebug(`Failed to parse date: ${dateStr}`);
             return null;
         }
 
@@ -768,7 +765,7 @@
             });
         }
 
-        // Correct business logic for processing data
+        // Correct approach: use APPOINTMENTDATE and group by patient to track their journey
         function processData() {
             const selectedMonth = document.getElementById('monthFilter').value;
             
@@ -784,60 +781,68 @@
                 processedData.conversions[tp] = { sent: 0, converted: 0, rate: 0 };
             });
 
-            showDebug(`Processing ${rawData.length} records for conversion analysis...`);
+            showDebug(`Processing ${rawData.length} appointment records...`);
+            showDebug(`Selected month filter: ${selectedMonth || 'All months'}`);
 
-            // Group all appointments by patient ID
-            const patientData = {};
+            // Group appointments by patient
+            const patientAppointments = {};
+            
             rawData.forEach(row => {
                 const patientId = row.INTERNALID;
-                if (!patientId) return;
-
-                if (!patientData[patientId]) {
-                    patientData[patientId] = [];
+                const appointmentDate = parseDate(row.APPOINTMENTDATE);
+                
+                if (!patientId || !appointmentDate) return;
+                
+                if (!patientAppointments[patientId]) {
+                    patientAppointments[patientId] = [];
                 }
                 
-                const appointmentDate = parseDate(row.APPOINTMENTDATE);
-                if (appointmentDate) {
-                    patientData[patientId].push({
-                        date: appointmentDate,
-                        type: row.APPOINTMENTTYPE,
-                        bookedBy: row.BOOKEDBY || 'Online',
-                        firstAppt: parseDate(row.FIRSTAPPOINTMENT),
-                        lastAppt: parseDate(row.LASTAPPOINTMENT),
-                        raw: row // Keep raw data for debugging
-                    });
-                }
+                patientAppointments[patientId].push({
+                    date: appointmentDate,
+                    type: row.APPOINTMENTTYPE,
+                    bookedBy: row.BOOKEDBY || 'Online'
+                });
             });
 
-            showDebug(`Found ${Object.keys(patientData).length} unique patients`);
+            showDebug(`Found ${Object.keys(patientAppointments).length} unique patients`);
 
-            // Process ALL patients for touchpoint analysis (removed 100 limit)
-            let processedPatients = 0;
-            const totalPatients = Object.keys(patientData).length;
+            // Show current date for reference
+            const now = new Date();
+            showDebug(`Current date: ${now.toISOString().split('T')[0]}`);
             
-            Object.entries(patientData).forEach(([patientId, appointments]) => {
+            // Show 18 months ago cutoff
+            const eighteenMonthsAgo = new Date();
+            eighteenMonthsAgo.setMonth(eighteenMonthsAgo.getMonth() - 18);
+            showDebug(`18 months ago cutoff: ${eighteenMonthsAgo.toISOString().split('T')[0]}`);
+
+            let processedPatients = 0;
+            let remindersCalculated = 0;
+            
+            // Process each patient's appointment journey
+            Object.entries(patientAppointments).forEach(([patientId, appointments]) => {
                 processedPatients++;
                 
-                if (processedPatients % 100 === 0) {
-                    updateProgress(70 + (processedPatients / totalPatients) * 20, 
-                        `Processing patient ${processedPatients} of ${totalPatients}...`);
+                if (processedPatients % 1000 === 0) {
+                    updateProgress(70 + (processedPatients / Object.keys(patientAppointments).length) * 20, 
+                        `Processing patient ${processedPatients}...`);
                 }
 
-                // Sort appointments by date
+                // Sort appointments chronologically
                 appointments.sort((a, b) => a.date - b.date);
                 
-                // Find first appointment - look for "Initial" or first appointment chronologically
-                let firstAppointment = appointments.find(a => a.type && a.type.toLowerCase().includes('initial'));
-                if (!firstAppointment) {
-                    // If no "Initial" type found, use the first appointment chronologically
-                    firstAppointment = appointments[0];
-                }
-                
+                // Find first appointment (earliest date)
+                const firstAppointment = appointments[0];
+                // Find last appointment (most recent date)  
                 const lastAppointment = appointments[appointments.length - 1];
                 
-                if (!firstAppointment || !lastAppointment) {
-                    showDebug(`Patient ${patientId}: Missing first or last appointment`);
-                    return;
+                if (!firstAppointment || !lastAppointment) return;
+
+                // Debug first few patients
+                if (processedPatients <= 3) {
+                    showDebug(`=== PATIENT ${patientId} ===`);
+                    showDebug(`  ${appointments.length} appointments`);
+                    showDebug(`  First: ${firstAppointment.date.toISOString().split('T')[0]} (${firstAppointment.type})`);
+                    showDebug(`  Last: ${lastAppointment.date.toISOString().split('T')[0]} (${lastAppointment.type})`);
                 }
 
                 // Check each touchpoint for this patient
@@ -846,24 +851,29 @@
                     const baseDate = config.baseField === 'FIRSTAPPOINTMENT' ? 
                         firstAppointment.date : lastAppointment.date;
                     
-                    if (!baseDate) return;
-
                     // Calculate when the reminder would be sent
                     const reminderDate = new Date(baseDate);
                     reminderDate.setDate(reminderDate.getDate() + config.days);
                     
                     const reminderMonth = `${reminderDate.getFullYear()}-${String(reminderDate.getMonth() + 1).padStart(2, '0')}`;
                     
-                    // If we're filtering by month, only process reminders for that month
-                    if (selectedMonth && selectedMonth !== reminderMonth) return;
+                    // Debug first patient's calculations
+                    if (processedPatients === 1) {
+                        showDebug(`  ${touchpointName}: ${config.baseField} ${baseDate.toISOString().split('T')[0]} + ${config.days} days = ${reminderDate.toISOString().split('T')[0]} (${reminderMonth})`);
+                    }
                     
-                    // Only count reminders from the last 18 months
-                    const eighteenMonthsAgo = new Date();
-                    eighteenMonthsAgo.setMonth(eighteenMonthsAgo.getMonth() - 18);
+                    // Apply filters
+                    if (selectedMonth && selectedMonth !== reminderMonth) return;
                     if (reminderDate < eighteenMonthsAgo) return;
+                    if (reminderDate > now) return;
 
-                    // This patient was eligible for a reminder on this date
+                    // This patient was eligible for a reminder
                     processedData.conversions[touchpointName].sent++;
+                    remindersCalculated++;
+                    
+                    if (processedPatients === 1) {
+                        showDebug(`    ✅ REMINDER COUNTED!`);
+                    }
                     
                     // Check for conversion within 30 days after reminder
                     const conversionWindowEnd = new Date(reminderDate);
@@ -878,6 +888,10 @@
                     if (conversion) {
                         processedData.conversions[touchpointName].converted++;
                         
+                        if (processedPatients === 1) {
+                            showDebug(`    ✅ CONVERSION: ${conversion.date.toISOString().split('T')[0]}`);
+                        }
+                        
                         // Track by booking source
                         const source = conversion.bookedBy;
                         processedData.bySource[source] = (processedData.bySource[source] || 0) + 1;
@@ -887,6 +901,9 @@
                     }
                 });
             });
+
+            showDebug(`Processed ${processedPatients} patients`);
+            showDebug(`Total reminders calculated: ${remindersCalculated}`);
 
             // Calculate conversion rates
             let totalSent = 0, totalConverted = 0;
@@ -903,7 +920,8 @@
                 rate: totalSent > 0 ? (totalConverted / totalSent * 100) : 0
             };
 
-            showDebug(`Analysis complete: ${totalSent} reminders sent, ${totalConverted} conversions found`);
+            showDebug(`=== FINAL RESULTS ===`);
+            showDebug(`${totalSent} reminders sent, ${totalConverted} conversions found`);
             
             // Show breakdown by touchpoint
             Object.entries(processedData.conversions).forEach(([name, data]) => {
@@ -912,33 +930,9 @@
                 }
             });
 
-            // Show sample patients processed with more detail
-            const samplePatients = Object.keys(patientData).slice(0, 5);
-            samplePatients.forEach(patientId => {
-                const appts = patientData[patientId];
-                const firstAppt = appts.find(a => a.type && a.type.toLowerCase().includes('initial')) || appts[0];
-                const lastAppt = appts[appts.length - 1];
-                showDebug(`Patient ${patientId}: ${appts.length} appointments`);
-                if (firstAppt) showDebug(`  First: ${firstAppt.date?.toISOString()?.split('T')[0]} (${firstAppt.type})`);
-                if (lastAppt) showDebug(`  Last: ${lastAppt.date?.toISOString()?.split('T')[0]} (${lastAppt.type})`);
-                
-                // Show what reminders would be calculated for this patient
-                Object.entries(touchpoints).forEach(([touchpointName, config]) => {
-                    const baseDate = config.baseField === 'FIRSTAPPOINTMENT' ? firstAppt?.date : lastAppt?.date;
-                    if (baseDate) {
-                        const reminderDate = new Date(baseDate);
-                        reminderDate.setDate(reminderDate.getDate() + config.days);
-                        const reminderMonth = `${reminderDate.getFullYear()}-${String(reminderDate.getMonth() + 1).padStart(2, '0')}`;
-                        
-                        // Only show recent reminders
-                        const now = new Date();
-                        const monthsAgo = (now.getFullYear() - reminderDate.getFullYear()) * 12 + (now.getMonth() - reminderDate.getMonth());
-                        if (monthsAgo <= 18 && monthsAgo >= 0) {
-                            showDebug(`  ${touchpointName} reminder would be sent: ${reminderMonth}`);
-                        }
-                    }
-                });
-            });
+            if (totalSent === 0) {
+                showDebug(`❌ NO REMINDERS FOUND`);
+            }
         }
 
         // Load sample data for testing - more realistic version
