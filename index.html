@@ -538,23 +538,58 @@
             return isNaN(date.getTime()) ? null : date;
         }
 
-        // Simple CSV parser with better error handling
+        // Enhanced CSV parser with better column detection
         function parseCSV(csvText) {
             try {
                 const lines = csvText.split('\n').filter(line => line.trim());
                 if (lines.length === 0) return [];
                 
-                const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-                showDebug(`Found ${headers.length} columns: ${headers.slice(0, 5).join(', ')}...`);
+                // Parse headers more carefully - handle quoted CSV properly
+                const headerLine = lines[0];
+                const headers = [];
+                let currentHeader = '';
+                let inQuotes = false;
+                
+                for (let i = 0; i < headerLine.length; i++) {
+                    const char = headerLine[i];
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        headers.push(currentHeader.trim().replace(/"/g, ''));
+                        currentHeader = '';
+                    } else {
+                        currentHeader += char;
+                    }
+                }
+                headers.push(currentHeader.trim().replace(/"/g, ''));
+                
+                showDebug(`Found ${headers.length} columns:`);
+                headers.forEach((header, index) => {
+                    showDebug(`Column ${String.fromCharCode(65 + index)}: ${header}`);
+                });
+                
+                // Try to map the expected columns to actual columns
+                const columnMapping = detectColumnMapping(headers);
+                showDebug(`Column mapping: ${JSON.stringify(columnMapping)}`);
+                
+                if (!columnMapping.INTERNALID || !columnMapping.APPOINTMENTDATE) {
+                    throw new Error('Could not find required columns INTERNALID and APPOINTMENTDATE');
+                }
                 
                 const data = [];
-                for (let i = 1; i < lines.length; i++) { // Process ALL rows, not just first 1000
-                    const values = lines[i].split(',');
+                for (let i = 1; i < lines.length; i++) {
+                    const values = parseCSVRow(lines[i]);
                     if (values.length >= headers.length) {
                         const row = {};
-                        headers.forEach((header, index) => {
-                            row[header] = (values[index] || '').trim().replace(/"/g, '');
-                        });
+                        
+                        // Map to our expected column names
+                        row.INTERNALID = values[columnMapping.INTERNALID] || '';
+                        row.APPOINTMENTDATE = values[columnMapping.APPOINTMENTDATE] || '';
+                        row.APPOINTMENTTYPE = values[columnMapping.APPOINTMENTTYPE] || '';
+                        row.FIRSTAPPOINTMENT = values[columnMapping.FIRSTAPPOINTMENT] || '';
+                        row.LASTAPPOINTMENT = values[columnMapping.LASTAPPOINTMENT] || '';
+                        row.BOOKEDBY = values[columnMapping.BOOKEDBY] || '';
+                        row.APPOINTMENTWITH = values[columnMapping.APPOINTMENTWITH] || '';
                         
                         // Only include rows with required data
                         if (row.INTERNALID && row.APPOINTMENTDATE) {
@@ -562,19 +597,85 @@
                         }
                     }
                     
-                    // Update progress every 100 rows
-                    if (i % 100 === 0) {
+                    // Update progress every 500 rows
+                    if (i % 500 === 0) {
                         updateProgress(50 + (i / lines.length) * 20, `Parsing row ${i}...`);
                     }
                 }
                 
                 showDebug(`Parsed ${data.length} valid records from ${lines.length - 1} total lines`);
+                
+                // Show sample of parsed data
+                if (data.length > 0) {
+                    showDebug(`Sample record: ${JSON.stringify(data[0])}`);
+                }
+                
                 return data;
                 
             } catch (error) {
                 showAlert(`CSV parsing error: ${error.message}`, 'error');
                 return [];
             }
+        }
+
+        // Detect which columns in the CSV correspond to our required fields
+        function detectColumnMapping(headers) {
+            const mapping = {};
+            
+            // Map based on your document specification:
+            // Column A – INTERNALID, Column J – APPOINTMENTDATE, etc.
+            headers.forEach((header, index) => {
+                const normalizedHeader = header.toLowerCase().trim();
+                
+                // Try to match column names
+                if (normalizedHeader.includes('internalid') || normalizedHeader.includes('internal_id') || normalizedHeader === 'internalid') {
+                    mapping.INTERNALID = index;
+                } else if (normalizedHeader.includes('appointmentdate') || normalizedHeader.includes('appointment_date')) {
+                    mapping.APPOINTMENTDATE = index;
+                } else if (normalizedHeader.includes('appointmenttype') || normalizedHeader.includes('appointment_type')) {
+                    mapping.APPOINTMENTTYPE = index;
+                } else if (normalizedHeader.includes('firstappointment') || normalizedHeader.includes('first_appointment')) {
+                    mapping.FIRSTAPPOINTMENT = index;
+                } else if (normalizedHeader.includes('lastappointment') || normalizedHeader.includes('last_appointment')) {
+                    mapping.LASTAPPOINTMENT = index;
+                } else if (normalizedHeader.includes('bookedby') || normalizedHeader.includes('booked_by')) {
+                    mapping.BOOKEDBY = index;
+                } else if (normalizedHeader.includes('appointmentwith') || normalizedHeader.includes('appointment_with')) {
+                    mapping.APPOINTMENTWITH = index;
+                }
+            });
+            
+            // If we can't find by name, try by position (A=0, J=9, K=10, M=12, N=13, H=7, I=8)
+            if (!mapping.INTERNALID && headers.length > 0) mapping.INTERNALID = 0; // Column A
+            if (!mapping.APPOINTMENTDATE && headers.length > 9) mapping.APPOINTMENTDATE = 9; // Column J
+            if (!mapping.APPOINTMENTTYPE && headers.length > 10) mapping.APPOINTMENTTYPE = 10; // Column K
+            if (!mapping.FIRSTAPPOINTMENT && headers.length > 12) mapping.FIRSTAPPOINTMENT = 12; // Column M
+            if (!mapping.LASTAPPOINTMENT && headers.length > 13) mapping.LASTAPPOINTMENT = 13; // Column N
+            if (!mapping.BOOKEDBY && headers.length > 7) mapping.BOOKEDBY = 7; // Column H
+            if (!mapping.APPOINTMENTWITH && headers.length > 8) mapping.APPOINTMENTWITH = 8; // Column I
+            
+            return mapping;
+        }
+
+        // Parse a single CSV row handling quotes properly
+        function parseCSVRow(line) {
+            const values = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    values.push(current.trim().replace(/"/g, ''));
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            values.push(current.trim().replace(/"/g, ''));
+            return values;
         }
 
         // Load data with timeout and error handling
@@ -685,14 +786,16 @@
 
             showDebug(`Found ${Object.keys(patientData).length} unique patients`);
 
-            // Process each patient for touchpoint analysis
+            // Process ALL patients for touchpoint analysis (removed 100 limit)
             let processedPatients = 0;
+            const totalPatients = Object.keys(patientData).length;
+            
             Object.entries(patientData).forEach(([patientId, appointments]) => {
                 processedPatients++;
                 
-                if (processedPatients % 50 === 0) {
-                    updateProgress(70 + (processedPatients / Object.keys(patientData).length) * 20, 
-                        `Processing patient ${processedPatients}...`);
+                if (processedPatients % 100 === 0) {
+                    updateProgress(70 + (processedPatients / totalPatients) * 20, 
+                        `Processing patient ${processedPatients} of ${totalPatients}...`);
                 }
 
                 // Sort appointments by date
@@ -773,6 +876,13 @@
                 if (data.sent > 0) {
                     showDebug(`${name}: ${data.sent} sent, ${data.converted} converted (${data.rate.toFixed(1)}%)`);
                 }
+            });
+
+            // Show sample patients processed
+            const samplePatients = Object.keys(patientData).slice(0, 3);
+            samplePatients.forEach(patientId => {
+                const appts = patientData[patientId];
+                showDebug(`Sample patient ${patientId}: ${appts.length} appointments, first: ${appts[0]?.date?.toISOString()?.split('T')[0]}, last: ${appts[appts.length-1]?.date?.toISOString()?.split('T')[0]}`);
             });
         }
 
