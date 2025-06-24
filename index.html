@@ -367,7 +367,8 @@
                 </div>
                 <div id="statusMessage" class="hidden"></div>
                 <p style="font-size: 14px; color: #6b7280; margin-top: 16px;">
-                    <strong>Expected Columns:</strong> INTERNALID | DOB | SEX | BOOKEDBY | APPOINTMENTWITH | APPOINTMENTDATE | APPOINTMENTTYPE | APPOINTMENT_STATUS
+                    <strong>Expected Columns:</strong> INTERNALID | DOB | SEX | BOOKEDBY | APPOINTMENTWITH | APPOINTMENTDATE | APPOINTMENTTYPE | APPOINTMENT_STATUS<br>
+                    <strong>Revenue Model:</strong> Each follow-up conversion = $89 | New patients = $450 | Other appointments estimated
                 </p>
             </div>
             
@@ -606,12 +607,13 @@
         let selectedTouchpoint = '6months';
         let currentTab = 'conversions';
 
-        // Revenue estimates (adjust based on your actual pricing)
+        // Revenue estimates - Cannabis clinic specific pricing
         const revenueEstimates = {
             'New patient': 450,
-            'Follow Up': 250,
+            'Follow Up': 89,  // Updated: Each follow-up conversion = $89
             'Telehealth': 180,
-            'default': 250
+            'default': 250,
+            'conversion': 89  // All follow-up conversions worth $89
         };
 
         // Touchpoint definitions
@@ -903,10 +905,9 @@
                         monthlyResults[monthKey].remindersSent += patientsNeedingReminder.length;
                         monthlyResults[monthKey].conversions += conversions.length;
                         
-                        // Calculate revenue from conversions
-                        conversions.forEach(conversion => {
-                            monthlyResults[monthKey].revenue += estimateRevenue(conversion.APPOINTMENTTYPE);
-                        });
+                        // Calculate revenue from conversions - Each conversion = $89
+                        const conversionRevenue = conversions.length * 89;
+                        monthlyResults[monthKey].revenue += conversionRevenue;
 
                     } catch (error) {
                         console.error(`Error processing date "${todayDate}":`, error);
@@ -1216,6 +1217,7 @@
             const totalReminders = currentResults.reduce((sum, r) => sum + r.remindersSent, 0);
             const totalConversions = currentResults.reduce((sum, r) => sum + r.conversions, 0);
             const totalRevenue = currentResults.reduce((sum, r) => sum + (r.revenue || 0), 0);
+            // Note: Revenue represents follow-up conversions at $89 each
             const overallRate = totalReminders > 0 ? (totalConversions / totalReminders * 100).toFixed(1) : '0.0';
 
             document.getElementById('totalReminders').textContent = totalReminders.toLocaleString();
@@ -1688,10 +1690,79 @@
             csvContent += '\n';
             csvContent += 'ACTIONABLE RECOMMENDATIONS\n';
             csvContent += 'Priority,Recommendation,Expected Impact\n';
-            csvContent += '1,"Implement automated follow-up system","Reduce manual work + increase conversions"\n';
-            csvContent += '2,"Address no-show patterns","Recover $' + lostRevenue.toLocaleString() + ' in lost revenue"\n';
+            csvContent += '1,"Implement automated follow-up system","Each conversion = $89 revenue recovery"\n';
+            csvContent += '2,"Address no-show patterns","Recover 
+            
+            // Create and download file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', 'executive_summary_cannabis_clinic.csv');
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                showStatus('✅ Executive summary exported successfully!', 'success');
+            } else {
+                alert('Your browser does not support file downloads');
+            }
+        }
+
+        // Event listeners
+        document.getElementById('csvFile').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            if (!file.name.endsWith('.csv')) {
+                showStatus('❌ Please select a CSV file', 'error');
+                return;
+            }
+            
+            showStatus('🔄 Reading file and preparing comprehensive analysis...', 'info');
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                processCsvData(e.target.result);
+            };
+            reader.onerror = function() {
+                showStatus('❌ Error reading file', 'error');
+            };
+            reader.readAsText(file);
+        });
+
+        // Export buttons
+        document.getElementById('exportDataBtn').addEventListener('click', exportComprehensiveResults);
+        document.getElementById('executiveReportBtn').addEventListener('click', exportExecutiveSummary);
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                currentTab = this.dataset.tab;
+                updateDisplay();
+            });
+        });
+
+        // Touchpoint selection
+        document.getElementById('touchpointButtons').addEventListener('click', function(e) {
+            if (e.target.dataset.touchpoint) {
+                selectedTouchpoint = e.target.dataset.touchpoint;
+                updateDisplay();
+            }
+        });
+
+        // Initialize
+        updateButtonStates();
+        
+        console.log('Enhanced Cannabis Clinic Business Intelligence Dashboard initialized');
+    </script>
+</body>
+</html> + lostRevenue.toLocaleString() + ' in lost revenue"\n';
             csvContent += '3,"Optimize booking channels","Focus resources on highest-performing channels"\n';
-            csvContent += '4,"Practitioner performance analysis","Identify and replicate best practices"\n';
+            csvContent += '4,"Scale successful follow-up touchpoints","Multiply $89 conversion value across patient base"\n';
             
             // Create and download file
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
