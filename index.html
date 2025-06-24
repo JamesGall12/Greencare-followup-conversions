@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Follow-Up Conversion Dashboard</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/papaparse/5.4.1/papaparse.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -134,6 +133,21 @@
             border-color: #7c3aed;
         }
 
+        .auto-button {
+            background: #2563eb;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 12px 0;
+        }
+
+        .auto-button:hover {
+            background: #1d4ed8;
+        }
+
         .summary-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -219,6 +233,17 @@
             margin-top: 12px;
         }
 
+        .status-message {
+            padding: 12px;
+            border-radius: 6px;
+            margin: 12px 0;
+            font-size: 14px;
+        }
+
+        .status-info { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+        .status-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+        .status-error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+
         @media (max-width: 768px) {
             .button-grid {
                 grid-template-columns: repeat(2, 1fr);
@@ -230,16 +255,6 @@
 
         .hidden {
             display: none;
-        }
-
-        .filter-info {
-            background: #f3e8ff;
-            border: 1px solid #c4b5fd;
-            padding: 12px;
-            border-radius: 6px;
-            margin-top: 12px;
-            font-size: 14px;
-            color: #5b21b6;
         }
     </style>
 </head>
@@ -258,29 +273,25 @@
                 </svg>
                 <h2>Data Upload</h2>
             </div>
+            
             <div class="file-upload">
                 <input type="file" id="csvFile" accept=".csv" />
-                <div style="margin: 16px 0; text-align: center;">
-                    <button id="autoLoadBtn" style="background: #2563eb; color: white; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
-                        🔗 Auto-Load from Google Sheets
-                    </button>
-                </div>
-                <div id="uploadStatus" style="margin-top: 8px; padding: 8px; border-radius: 4px; display: none;">
-                    <div id="processingStatus" style="color: #2563eb;">
-                        🔄 Processing file...
-                    </div>
-                </div>
+                <button id="loadSampleBtn" class="auto-button">
+                    📊 Load Sample Data (Demo)
+                </button>
+                <div id="statusMessage" class="hidden"></div>
                 <p style="font-size: 14px; color: #6b7280; margin-top: 8px;">
-                    Upload your clinic CSV file or auto-load from Google Sheets<br>
+                    Upload your clinic CSV file or use sample data<br>
                     <strong>Column A</strong> = Patient IDs (INTERNALID)<br>
                     <strong>Column J</strong> = Appointment Dates (APPOINTMENTDATE)
                 </p>
             </div>
+            
             <div id="dataStatus" class="hidden">
                 <div class="status-success">
                     <div style="display: flex; align-items: center; gap: 8px; color: #166534; margin-bottom: 8px;">
                         <span style="font-size: 18px;">✅</span>
-                        <span style="font-weight: 600;">Clinic Data Loaded Successfully</span>
+                        <span style="font-weight: 600;">Data Loaded Successfully</span>
                     </div>
                     <div class="status-grid">
                         <div>
@@ -293,7 +304,7 @@
                         </div>
                         <div>
                             <span style="color: #16a34a; font-size: 14px;">Date Range:</span><br>
-                            <span style="font-weight: bold; color: #15803d;">1 Year Sample</span>
+                            <span id="dateRange" style="font-weight: bold; color: #15803d;">-</span>
                         </div>
                         <div>
                             <span style="color: #16a34a; font-size: 14px;">Return Rate:</span><br>
@@ -351,9 +362,6 @@
             <div style="display: flex; flex-wrap: wrap; gap: 12px;" id="monthButtons">
                 <button class="button purple active" data-month="all">All Months</button>
             </div>
-            <div id="monthFilterInfo" class="filter-info hidden">
-                📅 Viewing results for: <strong id="selectedMonthText"></strong>
-            </div>
         </div>
 
         <!-- Summary Cards -->
@@ -399,7 +407,7 @@
             
             <div id="resultsTable">
                 <div style="text-align: center; padding: 32px 0; color: #6b7280;">
-                    Upload your CSV data to see conversion results
+                    Upload your CSV data or load sample data to see conversion results
                 </div>
             </div>
         </div>
@@ -418,12 +426,12 @@
                     </ul>
                 </div>
                 <div>
-                    <h4 style="font-weight: 500; margin-bottom: 4px; color: #1e40af;">Your Data Mapping:</h4>
+                    <h4 style="font-weight: 500; margin-bottom: 4px; color: #1e40af;">Expected Data:</h4>
                     <ul style="font-size: 14px; color: #1e40af;">
-                        <li>• <strong>Column A (position 0)</strong> = Patient IDs</li>
-                        <li>• <strong>Column J (position 9)</strong> = Appointment Dates</li>
-                        <li>• <strong>14,105 appointments</strong> expected</li>
-                        <li>• <strong>7,124 unique patients</strong> expected</li>
+                        <li>• <strong>Column A</strong> = Patient IDs</li>
+                        <li>• <strong>Column J</strong> = Appointment Dates</li>
+                        <li>• CSV format without headers</li>
+                        <li>• Ready for conversion analysis</li>
                     </ul>
                 </div>
             </div>
@@ -431,6 +439,12 @@
     </div>
 
     <script>
+        // Global variables
+        let parsedData = [];
+        let conversionResults = {};
+        let selectedTouchpoint = '2weeks';
+        let selectedMonth = 'all';
+
         // Touchpoint definitions
         const touchpoints = {
             '2weeks': { name: '2 Week Follow-up', lookback: 14 },
@@ -441,118 +455,119 @@
             '12months': { name: '12 Month Follow-up', lookback: 365 }
         };
 
-        // Global variables
-        let parsedData = [];
-        let conversionResults = {};
-        let selectedTouchpoint = '2weeks';
-        let selectedMonth = 'all';
-
-        // File upload handler
-        document.getElementById('csvFile').addEventListener('change', function(event) {
-            console.log('File selected:', event.target.files[0]);
-            const file = event.target.files[0];
-            
-            if (!file) {
-                console.log('No file selected');
-                return;
-            }
-            
-            if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
-                alert('Please select a CSV file');
-                return;
-            }
-            
-            console.log('Reading file:', file.name, 'Size:', file.size);
-            
-            // Show processing status
-            const uploadStatus = document.getElementById('uploadStatus');
-            const processingStatus = document.getElementById('processingStatus');
-            uploadStatus.style.display = 'block';
-            processingStatus.textContent = '🔄 Reading file...';
-            processingStatus.style.color = '#2563eb';
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                console.log('File read successfully, length:', e.target.result.length);
-                processingStatus.textContent = '🔄 Processing data...';
+        // Simple CSV parser
+        function parseCSV(csvText) {
+            console.log('Parsing CSV data...');
+            const lines = csvText.split('\n').filter(line => line.trim());
+            const data = lines.map(line => {
+                const result = [];
+                let current = '';
+                let inQuotes = false;
                 
-                // Small delay to show the status update
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        result.push(current.trim().replace(/"/g, ''));
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                result.push(current.trim().replace(/"/g, ''));
+                return result;
+            });
+            
+            return { data: data, errors: [] };
+        }
+
+        // Show status message
+        function showStatus(message, type = 'info') {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.className = `status-message status-${type}`;
+            statusEl.textContent = message;
+            statusEl.classList.remove('hidden');
+            
+            if (type === 'success') {
                 setTimeout(() => {
-                    processCsvData(e.target.result);
-                }, 100);
-            };
-            reader.onerror = function(e) {
-                console.error('Error reading file:', e);
-                processingStatus.textContent = '❌ Error reading file';
-                processingStatus.style.color = '#dc2626';
-                alert('Error reading file. Please try again.');
-            };
-            reader.readAsText(file);
-        });
+                    statusEl.classList.add('hidden');
+                }, 3000);
+            }
+        }
+
+        // Generate sample data for demo
+        function generateSampleData() {
+            showStatus('🔄 Generating sample data...', 'info');
+            
+            const sampleData = [];
+            const startDate = new Date('2024-01-01');
+            const endDate = new Date('2024-12-31');
+            
+            // Generate realistic appointment data
+            for (let patientId = 1; patientId <= 1000; patientId++) {
+                const numAppointments = Math.floor(Math.random() * 4) + 1; // 1-4 appointments per patient
+                
+                for (let appt = 0; appt < numAppointments; appt++) {
+                    const randomTime = startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime());
+                    const randomDate = new Date(randomTime);
+                    const dateStr = randomDate.toLocaleDateString('en-AU') + ' 00:00:00';
+                    
+                    // Create row with data in positions A=0 and J=9
+                    const row = new Array(14).fill('');
+                    row[0] = patientId; // Column A - Patient ID
+                    row[9] = dateStr;   // Column J - Appointment Date
+                    
+                    sampleData.push(row);
+                }
+            }
+            
+            console.log('Generated sample data:', sampleData.length, 'appointments');
+            return { data: sampleData, errors: [] };
+        }
 
         // Process CSV data
         function processCsvData(csvText) {
             console.log('Processing CSV data...');
-            console.log('CSV preview (first 500 chars):', csvText.substring(0, 500));
-            
-            const uploadStatus = document.getElementById('uploadStatus');
-            const processingStatus = document.getElementById('processingStatus');
+            showStatus('🔄 Processing data...', 'info');
             
             try {
-                // Use our fallback-enabled parser
-                const parsed = parseCSV(csvText);
-
-                console.log('CSV Parse results:', parsed);
-                console.log('Number of rows parsed:', parsed.data.length);
-                
-                if (parsed.errors && parsed.errors.length > 0) {
-                    console.warn('Parse errors:', parsed.errors);
+                let parsed;
+                if (csvText === 'SAMPLE_DATA') {
+                    parsed = generateSampleData();
+                } else {
+                    parsed = parseCSV(csvText);
                 }
+
+                console.log('Parse results:', parsed.data.length, 'rows');
 
                 // Map to your actual column positions: A=0, J=9
                 parsedData = parsed.data.map((row, index) => {
                     if (index < 3) {
                         console.log(`Row ${index}:`, row);
-                        console.log(`Patient ID (col 0):`, row[0], `Appointment Date (col 9):`, row[9]);
                     }
                     return {
                         INTERNALID: row[0],      // Column A
                         APPOINTMENTDATE: row[9]  // Column J
                     };
                 }).filter(row => {
-                    return row.INTERNALID && row.APPOINTMENTDATE;
+                    return row.INTERNALID && row.APPOINTMENTDATE && 
+                           row.INTERNALID !== '' && row.APPOINTMENTDATE !== '';
                 });
 
                 console.log('Filtered data length:', parsedData.length);
-                console.log('Sample filtered data:', parsedData.slice(0, 3));
 
                 if (parsedData.length > 0) {
-                    processingStatus.textContent = '✅ Data loaded successfully!';
-                    processingStatus.style.color = '#16a34a';
-                    
-                    console.log('Updating data status...');
+                    showStatus('✅ Data processed successfully!', 'success');
                     updateDataStatus();
-                    console.log('Calculating conversions...');
                     calculateAllConversions();
-                    console.log('Updating display...');
                     updateDisplay();
-                    console.log('Data processing complete!');
-                    
-                    // Hide processing status after a moment
-                    setTimeout(() => {
-                        uploadStatus.style.display = 'none';
-                    }, 2000);
                 } else {
-                    console.error('No valid data found after filtering');
-                    processingStatus.textContent = '❌ No valid data found';
-                    processingStatus.style.color = '#dc2626';
-                    alert('No valid data found. Please check that your CSV has data in columns A (Patient IDs) and J (Appointment Dates).\n\nMake sure:\n- Column A has patient IDs\n- Column J has appointment dates\n- File is in CSV format');
+                    showStatus('❌ No valid data found. Check your CSV format.', 'error');
                 }
             } catch (error) {
                 console.error('Error processing CSV:', error);
-                processingStatus.textContent = '❌ Processing error';
-                processingStatus.style.color = '#dc2626';
-                alert('Error processing CSV file: ' + error.message);
+                showStatus('❌ Error processing data: ' + error.message, 'error');
             }
         }
 
@@ -566,14 +581,20 @@
             const returnPatients = Object.values(patientCounts).filter(count => count > 1).length;
             const returnRate = Math.round((returnPatients / uniquePatients) * 100);
 
+            // Get date range
+            const dates = parsedData.map(r => new Date(r.APPOINTMENTDATE)).sort((a, b) => a - b);
+            const dateRange = `${dates[0].getFullYear()} - ${dates[dates.length - 1].getFullYear()}`;
+
             document.getElementById('totalAppointments').textContent = parsedData.length.toLocaleString();
             document.getElementById('uniquePatients').textContent = uniquePatients.toLocaleString();
+            document.getElementById('dateRange').textContent = dateRange;
             document.getElementById('returnRate').textContent = returnRate + '%';
             document.getElementById('dataStatus').classList.remove('hidden');
         }
 
         // Calculate conversions for all touchpoints
         function calculateAllConversions() {
+            console.log('Calculating conversions...');
             conversionResults = {};
 
             Object.keys(touchpoints).forEach(touchpointKey => {
@@ -626,7 +647,7 @@
                         monthlyResults[monthKey].conversions += conversions.length;
 
                     } catch (error) {
-                        console.error('Error processing date:', todayDate);
+                        // Skip invalid dates
                     }
                 });
 
@@ -660,40 +681,9 @@
                 button.textContent = month;
                 monthButtons.appendChild(button);
             });
-
-            // Add event listeners to month buttons
-            monthButtons.addEventListener('click', function(e) {
-                if (e.target.dataset.month) {
-                    selectedMonth = e.target.dataset.month;
-                    updateMonthButtonStates();
-                    updateDisplay();
-                }
-            });
         }
 
-        // Update button states
-        function updateTouchpointButtonStates() {
-            document.querySelectorAll('[data-touchpoint]').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.touchpoint === selectedTouchpoint);
-            });
-            document.getElementById('currentTouchpointLabel').textContent = `(${touchpoints[selectedTouchpoint].name})`;
-        }
-
-        function updateMonthButtonStates() {
-            document.querySelectorAll('[data-month]').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.month === selectedMonth);
-            });
-
-            const filterInfo = document.getElementById('monthFilterInfo');
-            if (selectedMonth === 'all') {
-                filterInfo.classList.add('hidden');
-            } else {
-                filterInfo.classList.remove('hidden');
-                document.getElementById('selectedMonthText').textContent = `${selectedMonth} (${touchpoints[selectedTouchpoint].name})`;
-            }
-        }
-
-        // Update main display
+        // Update display
         function updateDisplay() {
             const currentResults = conversionResults[selectedTouchpoint] || [];
             const filteredResults = selectedMonth === 'all' 
@@ -709,6 +699,7 @@
             document.getElementById('overallRate').textContent = overallRate + '%';
 
             updateResultsTable(filteredResults);
+            updateButtonStates();
         }
 
         // Update results table
@@ -754,30 +745,62 @@
             container.innerHTML = tableHTML;
         }
 
-        // Event listeners for touchpoint buttons
+        // Update button states
+        function updateButtonStates() {
+            document.querySelectorAll('[data-touchpoint]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.touchpoint === selectedTouchpoint);
+            });
+            document.querySelectorAll('[data-month]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.month === selectedMonth);
+            });
+            document.getElementById('currentTouchpointLabel').textContent = `(${touchpoints[selectedTouchpoint].name})`;
+        }
+
+        // File upload handler
+        document.getElementById('csvFile').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            if (!file.name.endsWith('.csv')) {
+                showStatus('❌ Please select a CSV file', 'error');
+                return;
+            }
+            
+            showStatus('🔄 Reading file...', 'info');
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                processCsvData(e.target.result);
+            };
+            reader.onerror = function() {
+                showStatus('❌ Error reading file', 'error');
+            };
+            reader.readAsText(file);
+        });
+
+        // Sample data button
+        document.getElementById('loadSampleBtn').addEventListener('click', function() {
+            processCsvData('SAMPLE_DATA');
+        });
+
+        // Touchpoint buttons
         document.getElementById('touchpointButtons').addEventListener('click', function(e) {
             if (e.target.dataset.touchpoint) {
                 selectedTouchpoint = e.target.dataset.touchpoint;
-                updateTouchpointButtonStates();
                 updateDisplay();
             }
         });
 
-        // Auto-load button event listener
-        document.getElementById('autoLoadBtn').addEventListener('click', function() {
-            loadGoogleSheetsData();
+        // Month buttons
+        document.addEventListener('click', function(e) {
+            if (e.target.dataset.month) {
+                selectedMonth = e.target.dataset.month;
+                updateDisplay();
+            }
         });
 
-        // Initialize and try auto-load on page load
-        updateTouchpointButtonStates();
-        updateMonthButtonStates();
-        
-        // Auto-load data when page loads
-        window.addEventListener('load', function() {
-            setTimeout(() => {
-                loadGoogleSheetsData();
-            }, 1000); // Wait 1 second for page to fully load
-        });
+        // Initialize
+        updateButtonStates();
     </script>
 </body>
 </html>
