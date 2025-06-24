@@ -276,18 +276,12 @@
             
             <div class="file-upload">
                 <input type="file" id="csvFile" accept=".csv" />
-                <button id="loadSampleBtn" class="auto-button">
-                    📊 Load Sample Data (Demo)
-                </button>
-                <button id="verifyLogicBtn" class="auto-button" style="background: #059669; margin-left: 8px;">
-                    🔍 Verify Logic (Debug Mode)
-                </button>
-                <button id="exportDataBtn" class="auto-button" style="background: #7c3aed; margin-left: 8px;" disabled>
+                <button id="exportDataBtn" class="auto-button" style="background: #7c3aed; margin-top: 12px;" disabled>
                     📤 Export Results
                 </button>
                 <div id="statusMessage" class="hidden"></div>
                 <p style="font-size: 14px; color: #6b7280; margin-top: 8px;">
-                    Upload your clinic CSV file or use sample data<br>
+                    Upload your clinic CSV file<br>
                     <strong>Column A</strong> = Patient IDs (INTERNALID)<br>
                     <strong>Column J</strong> = Appointment Dates (APPOINTMENTDATE)
                 </p>
@@ -378,7 +372,7 @@
         <div class="summary-grid">
             <div class="summary-card">
                 <div>
-                    <div class="summary-label">Reminders Sent</div>
+                    <div class="summary-label">Available Conversions</div>
                     <div class="summary-value" id="totalReminders">0</div>
                 </div>
                 <svg style="width: 32px; height: 32px; color: #2563eb;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -417,7 +411,7 @@
             
             <div id="resultsTable">
                 <div style="text-align: center; padding: 32px 0; color: #6b7280;">
-                    Upload your CSV data or load sample data to see conversion results
+                    Upload your CSV data to see conversion results
                 </div>
             </div>
         </div>
@@ -431,17 +425,17 @@
                     <ul style="font-size: 14px; color: #1e40af;">
                         <li>• Looks back X days to find eligible patients</li>
                         <li>• Excludes patients who already rebooked</li>
-                        <li>• Tracks 30-day conversion window</li>
-                        <li>• Groups by calendar month</li>
+                        <li>• Remaining = "Available Conversions"</li>
+                        <li>• Tracks conversions within 30-day window</li>
                     </ul>
                 </div>
                 <div>
-                    <h4 style="font-weight: 500; margin-bottom: 4px; color: #1e40af;">Data Verification:</h4>
+                    <h4 style="font-weight: 500; margin-bottom: 4px; color: #1e40af;">Expected Data Format:</h4>
                     <ul style="font-size: 14px; color: #1e40af;">
-                        <li>• Click "Verify Logic" for detailed calculation breakdown</li>
+                        <li>• <strong>Column A</strong> = Patient IDs (INTERNALID)</li>
+                        <li>• <strong>Column J</strong> = Appointment Dates (DD/MM/YYYY)</li>
+                        <li>• CSV format without headers</li>
                         <li>• Export results to verify in Excel/other tools</li>
-                        <li>• Check sample calculations match your expectations</li>
-                        <li>• Validate business logic makes sense for your clinic</li>
                     </ul>
                 </div>
             </div>
@@ -545,7 +539,7 @@
             console.log('📤 Exporting conversion results...');
             
             // Create CSV content
-            let csvContent = 'Touchpoint,Month,Reminders Sent,Conversions,Conversion Rate\n';
+            let csvContent = 'Touchpoint,Month,Available Conversions,Conversions,Conversion Rate\n';
             
             Object.keys(touchpoints).forEach(touchpointKey => {
                 const touchpointName = touchpoints[touchpointKey].name;
@@ -716,55 +710,13 @@
             showStatus('✅ Verification complete - check console for detailed breakdown', 'success');
         }
 
-        // Generate sample data for demo
-        function generateSampleData() {
-            showStatus('🔄 Generating sample data...', 'info');
-            
-            const sampleData = [];
-            const startDate = new Date('2024-01-01');
-            const endDate = new Date('2024-12-31');
-            
-            // Generate realistic appointment data
-            for (let patientId = 1; patientId <= 1000; patientId++) {
-                const numAppointments = Math.floor(Math.random() * 4) + 1; // 1-4 appointments per patient
-                
-                for (let appt = 0; appt < numAppointments; appt++) {
-                    const randomTime = startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime());
-                    const randomDate = new Date(randomTime);
-                    
-                    // Format as DD/MM/YYYY to match your data
-                    const day = randomDate.getDate().toString().padStart(2, '0');
-                    const month = (randomDate.getMonth() + 1).toString().padStart(2, '0');
-                    const year = randomDate.getFullYear();
-                    const dateStr = `${day}/${month}/${year} 00:00:00`;
-                    
-                    // Create row with data in positions A=0 and J=9
-                    const row = new Array(14).fill('');
-                    row[0] = patientId; // Column A - Patient ID
-                    row[9] = dateStr;   // Column J - Appointment Date
-                    
-                    sampleData.push(row);
-                }
-            }
-            
-            console.log('Generated sample data:', sampleData.length, 'appointments');
-            console.log('Sample date format:', sampleData[0][9]);
-            return { data: sampleData, errors: [] };
-        }
-
         // Process CSV data
         function processCsvData(csvText) {
             console.log('Processing CSV data...');
             showStatus('🔄 Processing data...', 'info');
             
             try {
-                let parsed;
-                if (csvText === 'SAMPLE_DATA') {
-                    parsed = generateSampleData();
-                } else {
-                    parsed = parseCSV(csvText);
-                }
-
+                const parsed = parseCSV(csvText);
                 console.log('Parse results:', parsed.data.length, 'rows');
 
                 // Map to your actual column positions: A=0, J=9
@@ -785,14 +737,9 @@
                 console.log('Filtered data length:', parsedData.length);
 
                 if (parsedData.length > 0) {
-                    showStatus('✅ Data loaded! Starting analysis...', 'success');
+                    showStatus('✅ Data processed successfully!', 'success');
                     updateDataStatus();
-                    
-                    // Start the optimized conversion calculation
-                    setTimeout(() => {
-                        calculateAllConversions();
-                    }, 500); // Small delay to let UI update
-                    
+                    calculateAllConversions();
                 } else {
                     showStatus('❌ No valid data found. Check your CSV format.', 'error');
                 }
@@ -905,7 +852,7 @@
                         });
 
                         if (index < 2) {
-                            console.log(`Patients needing reminder: ${patientsNeedingReminder.length}`);
+                            console.log(`Available conversions: ${patientsNeedingReminder.length}`);
                         }
 
                         totalRemindersNeeded += patientsNeedingReminder.length;
@@ -953,7 +900,7 @@
                 console.log(`\n${touchpointKey} Summary:`);
                 console.log(`- Processed dates: ${processedDates}`);
                 console.log(`- Total eligible patients found: ${totalEligibleFound}`);
-                console.log(`- Total reminders needed: ${totalRemindersNeeded}`);
+                console.log(`- Total available conversions: ${totalRemindersNeeded}`);
                 console.log(`- Total conversions: ${totalConversions}`);
 
                 // Calculate conversion rates
@@ -1044,7 +991,7 @@
                         <thead>
                             <tr>
                                 <th>Month</th>
-                                <th class="text-right">Reminders Sent</th>
+                                <th class="text-right">Available Conversions</th>
                                 <th class="text-right">Conversions</th>
                                 <th class="text-right">Conversion Rate</th>
                             </tr>
@@ -1112,16 +1059,6 @@
                 showStatus('❌ Error reading file', 'error');
             };
             reader.readAsText(file);
-        });
-
-        // Sample data button
-        document.getElementById('loadSampleBtn').addEventListener('click', function() {
-            processCsvData('SAMPLE_DATA');
-        });
-
-        // Verification button
-        document.getElementById('verifyLogicBtn').addEventListener('click', function() {
-            verifyConversionLogic();
         });
 
         // Export button
