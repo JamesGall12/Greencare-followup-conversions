@@ -366,10 +366,15 @@
                     <button id="executiveReportBtn" class="auto-button secondary" disabled>📈 Executive Summary Report</button>
                 </div>
                 <div id="statusMessage" class="hidden"></div>
-                <p style="font-size: 14px; color: #6b7280; margin-top: 16px;">
-                    <strong>Expected Columns:</strong> INTERNALID | DOB | SEX | BOOKEDBY | APPOINTMENTWITH | APPOINTMENTDATE | APPOINTMENTTYPE | APPOINTMENT_STATUS<br>
-                    <strong>Revenue Model:</strong> Each follow-up conversion = $89 | New patients = $450 | Other appointments estimated
-                </p>
+                <div style="background: #f0f9ff; border: 1px solid #0ea5e9; padding: 16px; border-radius: 8px; margin-top: 16px;">
+                    <h4 style="color: #0c4a6e; margin-bottom: 8px; font-weight: 600;">📋 Required CSV Format:</h4>
+                    <div style="font-size: 13px; color: #0c4a6e; line-height: 1.4;">
+                        <strong>Column Order (A to H):</strong><br>
+                        A = INTERNALID | B = DOB | C = SEX | D = BOOKEDBY | E = APPOINTMENTWITH | F = APPOINTMENTDATE | G = APPOINTMENTTYPE | H = APPOINTMENT_STATUS<br><br>
+                        <strong>Revenue Model:</strong> Follow-up conversions = $89 | New patients = $119<br>
+                        <strong>Date Format:</strong> DD/MM/YYYY (e.g., 15/03/2024)
+                    </div>
+                </div>
             </div>
             
             <div id="dataStatus" class="hidden">
@@ -609,11 +614,11 @@
 
         // Revenue estimates - Cannabis clinic specific pricing
         const revenueEstimates = {
-            'New patient': 450,
-            'Follow Up': 89,  // Updated: Each follow-up conversion = $89
+            'New patient': 119,  // Updated: New patients = $119
+            'Follow Up': 89,     // Follow-up conversions = $89
             'Telehealth': 180,
             'default': 250,
-            'conversion': 89  // All follow-up conversions worth $89
+            'conversion': 89     // All follow-up conversions worth $89
         };
 
         // Touchpoint definitions
@@ -652,6 +657,11 @@
 
         // Estimate revenue per appointment type
         function estimateRevenue(appointmentType) {
+            // Cannabis clinic revenue model:
+            // - New patients: $119
+            // - Follow-ups: $89  
+            // - Telehealth: $180
+            // - Default/Other: $250
             for (const type in revenueEstimates) {
                 if (appointmentType && appointmentType.toLowerCase().includes(type.toLowerCase())) {
                     return revenueEstimates[type];
@@ -730,17 +740,49 @@
             return { data: data, errors: [] };
         }
 
-        // Process CSV data
+        // Process CSV data with enhanced error handling
         function processCsvData(csvText) {
             console.log('Processing enhanced CSV data...');
             showStatus('🔄 Processing comprehensive data analysis...', 'info');
             
             try {
+                // Check if file has content
+                if (!csvText || csvText.trim().length === 0) {
+                    showStatus('❌ File appears to be empty. Please check your CSV file.', 'error');
+                    return;
+                }
+                
                 const parsed = parseCSV(csvText);
                 console.log('Parse results:', parsed.data.length, 'rows');
+                
+                if (parsed.data.length === 0) {
+                    showStatus('❌ No data rows found. Please check your CSV format.', 'error');
+                    return;
+                }
+                
+                // Check if we have enough columns
+                const firstRow = parsed.data[0];
+                if (!firstRow || firstRow.length < 8) {
+                    showStatus(`❌ Expected 8 columns (A-H), but found ${firstRow ? firstRow.length : 0}. Please check your CSV format.`, 'error');
+                    console.log('First row data:', firstRow);
+                    return;
+                }
 
-                // Map all columns
+                // Map all columns with validation
                 rawData = parsed.data.map((row, index) => {
+                    if (index < 3) {
+                        console.log(`Row ${index} sample:`, {
+                            INTERNALID: row[0],
+                            DOB: row[1], 
+                            SEX: row[2],
+                            BOOKEDBY: row[3],
+                            APPOINTMENTWITH: row[4],
+                            APPOINTMENTDATE: row[5],
+                            APPOINTMENTTYPE: row[6],
+                            APPOINTMENT_STATUS: row[7]
+                        });
+                    }
+                    
                     return {
                         INTERNALID: row[0] || '',
                         DOB: row[1] || '',
@@ -752,23 +794,38 @@
                         APPOINTMENT_STATUS: row[7] || ''
                     };
                 }).filter(row => {
+                    // Must have at minimum: patient ID and appointment date
                     return row.INTERNALID && row.APPOINTMENTDATE && 
                            row.INTERNALID !== '' && row.APPOINTMENTDATE !== '';
                 });
 
-                // Filter for completed appointments only
-                processedData = rawData.filter(row => isCompletedAppointment(row.APPOINTMENT_STATUS));
-
                 console.log('Raw data length:', rawData.length);
-                console.log('Completed appointments:', processedData.length);
-
-                if (processedData.length > 0) {
-                    showStatus('✅ Data processed successfully! Generating comprehensive analysis...', 'success');
-                    updateDataStatus();
-                    calculateAllAnalytics();
-                } else {
-                    showStatus('❌ No completed appointments found. Check your data format.', 'error');
+                
+                if (rawData.length === 0) {
+                    showStatus('❌ No valid records found. Check that Column A has Patient IDs and Column F has Appointment Dates.', 'error');
+                    return;
                 }
+
+                // Filter for completed appointments only
+                const validStatuses = ['Completed', 'At billing', 'With doctor'];
+                processedData = rawData.filter(row => {
+                    const status = row.APPOINTMENT_STATUS;
+                    return status && validStatuses.includes(status);
+                });
+
+                console.log('Completed appointments:', processedData.length);
+                console.log('Sample appointment statuses:', [...new Set(rawData.map(r => r.APPOINTMENT_STATUS))]);
+
+                if (processedData.length === 0) {
+                    showStatus('⚠️ No completed appointments found. Check Column H contains: "Completed", "At billing", or "With doctor"', 'error');
+                    console.log('All appointment statuses found:', [...new Set(rawData.map(r => r.APPOINTMENT_STATUS))]);
+                    return;
+                }
+
+                showStatus('✅ Data processed successfully! Generating comprehensive analysis...', 'success');
+                updateDataStatus();
+                calculateAllAnalytics();
+                
             } catch (error) {
                 console.error('Error processing CSV:', error);
                 showStatus('❌ Error processing data: ' + error.message, 'error');
@@ -1663,7 +1720,7 @@
             
             csvContent += 'KEY BUSINESS METRICS\n';
             csvContent += 'Metric,Value,Impact\n';
-            csvContent += `Total Revenue Generated,"$${totalRevenue.toLocaleString()}","Primary business driver"\n`;
+            csvContent += `Total Revenue Generated,"${totalRevenue.toLocaleString()}","New patients: $119 | Follow-ups: $89"\n`;
             csvContent += `Revenue Lost to No-Shows,"$${lostRevenue.toLocaleString()}","Immediate recovery opportunity"\n`;
             csvContent += `No-Show Rate,"${noShowRate}%","Operational efficiency target"\n`;
             csvContent += `Total Unique Patients,"${new Set(processedData.map(r => r.INTERNALID)).size.toLocaleString()}","Patient base size"\n`;
@@ -1717,8 +1774,20 @@
             const file = event.target.files[0];
             if (!file) return;
             
+            console.log('File selected:', file.name, 'Size:', file.size, 'Type:', file.type);
+            
             if (!file.name.endsWith('.csv')) {
-                showStatus('❌ Please select a CSV file', 'error');
+                showStatus('❌ Please select a CSV file (.csv extension required)', 'error');
+                return;
+            }
+            
+            if (file.size === 0) {
+                showStatus('❌ File appears to be empty', 'error');
+                return;
+            }
+            
+            if (file.size > 50 * 1024 * 1024) { // 50MB limit
+                showStatus('❌ File is too large (over 50MB). Please use a smaller file.', 'error');
                 return;
             }
             
@@ -1726,10 +1795,12 @@
             
             const reader = new FileReader();
             reader.onload = function(e) {
+                console.log('File read successfully, length:', e.target.result.length);
                 processCsvData(e.target.result);
             };
-            reader.onerror = function() {
-                showStatus('❌ Error reading file', 'error');
+            reader.onerror = function(error) {
+                console.error('FileReader error:', error);
+                showStatus('❌ Error reading file. Please try again.', 'error');
             };
             reader.readAsText(file);
         });
