@@ -1,924 +1,360 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Historical SMS Analysis - Time-Travel CRM Logic</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+import React, { useState, useMemo } from 'react';
+import { Upload, Calendar, TrendingUp, Users, BarChart3 } from 'lucide-react';
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            min-height: 100vh;
-            color: #2c3e50;
-        }
+const ConversionDashboard = () => {
+  const [csvData, setCsvData] = useState('');
+  const [selectedTouchpoint, setSelectedTouchpoint] = useState('6months');
+  const [selectedMonth, setSelectedMonth] = useState('all');
+  
+  // Define touchpoints with their lookback periods (in days)
+  const touchpoints = {
+    '2weeks': { name: '2 Week Follow-up', lookback: 14 },
+    '6weeks': { name: '6 Week Follow-up', lookback: 42 },
+    '3months': { name: '3 Month Follow-up', lookback: 90 },
+    '5months': { name: '5 Month Follow-up', lookback: 150 },
+    '6months': { name: '6 Month Follow-up', lookback: 180 },
+    '12months': { name: '12 Month Follow-up', lookback: 365 }
+  };
 
-        .header {
-            background: linear-gradient(135deg, #2d5a27 0%, #4a7c59 100%);
-            color: white;
-            padding: 20px 0;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
+  // Parse CSV data
+  const parsedData = useMemo(() => {
+    if (!csvData) return [];
+    
+    const lines = csvData.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return [];
+    
+    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+    const data = lines.slice(1).map(line => {
+      const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+      const row = {};
+      headers.forEach((header, index) => {
+        row[header] = values[index] || '';
+      });
+      return row;
+    });
+    
+    return data;
+  }, [csvData]);
 
-        .header-content {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 0 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+  // Core conversion calculation logic
+  const calculateConversions = useMemo(() => {
+    if (!parsedData.length) return {};
+    
+    const results = {};
+    
+    Object.keys(touchpoints).forEach(touchpointKey => {
+      const touchpoint = touchpoints[touchpointKey];
+      const monthlyResults = {};
+      
+      // Get all unique appointment dates to loop through
+      const allDates = [...new Set(parsedData.map(row => row.APPOINTMENTDATE).filter(Boolean))];
+      
+      allDates.forEach(todayDate => {
+        if (!todayDate) return;
+        
+        try {
+          const today = new Date(todayDate);
+          if (isNaN(today.getTime())) return;
+          
+          // Calculate reference date (go back X time)
+          const referenceDate = new Date(today);
+          referenceDate.setDate(referenceDate.getDate() - touchpoint.lookback);
+          
+          // Find patients who had appointment exactly on reference date
+          const eligiblePatients = parsedData.filter(row => {
+            const appointmentDate = new Date(row.APPOINTMENTDATE);
+            return appointmentDate.toDateString() === referenceDate.toDateString();
+          });
+          
+          // Remove patients who already rebooked between reference date and today
+          const patientsNeedingReminder = eligiblePatients.filter(patient => {
+            const patientId = patient.INTERNALID;
+            const hasRebookedAlready = parsedData.some(row => {
+              if (row.INTERNALID !== patientId) return false;
+              const apptDate = new Date(row.APPOINTMENTDATE);
+              return apptDate > referenceDate && apptDate < today;
+            });
+            return !hasRebookedAlready;
+          });
+          
+          // Check for conversions (appointments within 30 days after today)
+          const conversions = patientsNeedingReminder.filter(patient => {
+            const patientId = patient.INTERNALID;
+            const conversionWindowEnd = new Date(today);
+            conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
+            
+            return parsedData.some(row => {
+              if (row.INTERNALID !== patientId) return false;
+              const apptDate = new Date(row.APPOINTMENTDATE);
+              return apptDate > today && apptDate <= conversionWindowEnd;
+            });
+          });
+          
+          // Group by month
+          const monthKey = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}`;
+          
+          if (!monthlyResults[monthKey]) {
+            monthlyResults[monthKey] = {
+              remindersSent: 0,
+              conversions: 0,
+              month: monthKey
+            };
+          }
+          
+          monthlyResults[monthKey].remindersSent += patientsNeedingReminder.length;
+          monthlyResults[monthKey].conversions += conversions.length;
+          
+        } catch (error) {
+          console.error('Error processing date:', todayDate, error);
         }
+      });
+      
+      // Calculate conversion rates
+      Object.keys(monthlyResults).forEach(month => {
+        const result = monthlyResults[month];
+        result.conversionRate = result.remindersSent > 0 
+          ? (result.conversions / result.remindersSent * 100).toFixed(1)
+          : '0.0';
+      });
+      
+      results[touchpointKey] = Object.values(monthlyResults).sort((a, b) => a.month.localeCompare(b.month));
+    });
+    
+    return results;
+  }, [parsedData]);
 
-        .logo-section h1 {
-            font-size: 2rem;
-            font-weight: 300;
-            margin-bottom: 5px;
-        }
+  const currentResults = calculateConversions[selectedTouchpoint] || [];
+  
+  // Get available months for filtering
+  const availableMonths = useMemo(() => {
+    const months = new Set();
+    Object.values(calculateConversions).forEach(touchpointData => {
+      touchpointData.forEach(result => months.add(result.month));
+    });
+    return Array.from(months).sort();
+  }, [calculateConversions]);
 
-        .logo-section p {
-            opacity: 0.9;
-            font-size: 0.9rem;
-        }
+  // Filter results by selected month
+  const filteredResults = useMemo(() => {
+    if (selectedMonth === 'all') return currentResults;
+    return currentResults.filter(result => result.month === selectedMonth);
+  }, [currentResults, selectedMonth]);
 
-        .controls {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-        }
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (file && file.type === 'text/csv') {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setCsvData(e.target.result);
+      };
+      reader.readAsText(file);
+    }
+  };
 
-        .controls select, .controls button {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            background: rgba(255,255,255,0.2);
-            color: white;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
+  const totalReminders = filteredResults.reduce((sum, r) => sum + r.remindersSent, 0);
+  const totalConversions = filteredResults.reduce((sum, r) => sum + r.conversions, 0);
+  const overallRate = totalReminders > 0 ? (totalConversions / totalReminders * 100).toFixed(1) : '0.0';
 
-        .controls select:hover, .controls button:hover {
-            background: rgba(255,255,255,0.3);
-        }
+  return (
+    <div className="p-6 max-w-7xl mx-auto bg-gray-50 min-h-screen">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Follow-Up Conversion Dashboard</h1>
+        <p className="text-gray-600">Track conversion rates for SMS follow-up touchpoints across your patient journey</p>
+      </div>
 
-        .controls select option {
-            background: #2d5a27;
-            color: white;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #7f8c8d;
-        }
-
-        .loading-spinner {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #4a7c59;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-right: 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .debug-info {
-            background: #e3f2fd;
-            border: 1px solid #bbdefb;
-            border-radius: 6px;
-            padding: 12px;
-            margin-bottom: 20px;
-            color: #0d47a1;
-            font-size: 0.85rem;
-            font-family: monospace;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-
-        .alert {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            border-radius: 6px;
-            padding: 12px;
-            margin-bottom: 20px;
-            color: #856404;
-            font-size: 0.9rem;
-        }
-
-        .error {
-            background: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-        }
-
-        .summary-cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .card {
-            background: white;
-            border-radius: 12px;
-            padding: 24px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            border-left: 4px solid #4a7c59;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-        }
-
-        .card h3 {
-            color: #2d5a27;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
-            font-weight: 600;
-        }
-
-        .card .value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #2c3e50;
-            margin-bottom: 4px;
-        }
-
-        .card .subtitle {
-            color: #7f8c8d;
-            font-size: 0.85rem;
-        }
-
-        .chart-container {
-            background: white;
-            border-radius: 12px;
-            padding: 24px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            height: 400px;
-            margin-bottom: 20px;
-        }
-
-        .chart-container h3 {
-            color: #2d5a27;
-            font-size: 1.1rem;
-            margin-bottom: 20px;
-            font-weight: 600;
-        }
-
-        .chart-wrapper {
-            height: 320px;
-            position: relative;
-        }
-
-        .chart-wrapper canvas {
-            position: absolute !important;
-            top: 0;
-            left: 0;
-            width: 100% !important;
-            height: 100% !important;
-        }
-
-        .results-table {
-            background: white;
-            border-radius: 12px;
-            padding: 24px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            overflow-x: auto;
-        }
-
-        .results-table h3 {
-            color: #2d5a27;
-            font-size: 1.1rem;
-            margin-bottom: 20px;
-            font-weight: 600;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9rem;
-        }
-
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #ecf0f1;
-        }
-
-        th {
-            background: #f8f9fa;
-            color: #2d5a27;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 0.8rem;
-            letter-spacing: 0.5px;
-        }
-
-        tr:hover {
-            background: #f8f9fa;
-        }
-
-        .export-btn {
-            background: #4a7c59;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: background 0.3s ease;
-        }
-
-        .export-btn:hover {
-            background: #2d5a27;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 4px;
-            background: #ecf0f1;
-            border-radius: 2px;
-            overflow: hidden;
-            margin: 10px 0;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: #4a7c59;
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-    </style>
-</head>
-<body>
-    <header class="header">
-        <div class="header-content">
-            <div class="logo-section">
-                <h1>Historical SMS Analysis</h1>
-                <p>Time-Travel CRM Logic: Historical LASTAPPOINTMENTDATE Tracking</p>
-            </div>
-            <div class="controls">
-                <select id="monthFilter">
-                    <option value="">All Months</option>
-                </select>
-                <button onclick="loadData()" class="export-btn">Load Data</button>
-                <button onclick="loadSampleData()" class="export-btn">Sample Data</button>
-                <button onclick="exportData()" class="export-btn">Export CSV</button>
-            </div>
+      {/* File Upload Section */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Upload className="w-5 h-5 text-blue-600" />
+          <h2 className="text-xl font-semibold">Data Upload</h2>
         </div>
-    </header>
-
-    <div class="container">
-        <div id="loadingSection" class="loading" style="display: none;">
-            <div class="loading-spinner"></div>
-            <div id="loadingText">Loading data...</div>
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressBar"></div>
-            </div>
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+          <input
+            type="file"
+            accept=".csv"
+            onChange={handleFileUpload}
+            className="w-full"
+          />
+          <p className="text-sm text-gray-500 mt-2">
+            Upload your CSV file with INTERNALID and APPOINTMENTDATE columns
+          </p>
         </div>
+        {parsedData.length > 0 && (
+          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded">
+            <p className="text-green-800">✅ Data loaded: {parsedData.length} appointments processed</p>
+          </div>
+        )}
+      </div>
 
-        <div id="debugSection"></div>
-        <div id="alertSection"></div>
-
-        <div id="dashboardContent" style="display: none;">
-            <div class="summary-cards">
-                <div class="card">
-                    <h3>Total Reminders Sent</h3>
-                    <div class="value" id="totalReminders">-</div>
-                    <div class="subtitle">All touchpoints</div>
-                </div>
-                <div class="card">
-                    <h3>Total Conversions</h3>
-                    <div class="value" id="totalConversions">-</div>
-                    <div class="subtitle">Within 30 days</div>
-                </div>
-                <div class="card">
-                    <h3>Overall Conversion Rate</h3>
-                    <div class="value" id="overallRate">-</div>
-                    <div class="subtitle">All touchpoints</div>
-                </div>
-                <div class="card">
-                    <h3>Best Performing Touchpoint</h3>
-                    <div class="value" id="bestTouchpoint">-</div>
-                    <div class="subtitle">Highest conversion rate</div>
-                </div>
-            </div>
-
-            <div class="chart-container">
-                <h3>Conversion Rates by Touchpoint</h3>
-                <div class="chart-wrapper">
-                    <canvas id="conversionChart"></canvas>
-                </div>
-            </div>
-
-            <div class="results-table">
-                <h3>Historical Time-Travel Examples</h3>
-                <div id="verificationExamples" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-family: monospace; font-size: 0.85rem;">
-                    Run the analysis to see time-travel examples showing how LASTAPPOINTMENTDATE changes over time.
-                </div>
-            </div>
-
-            <div class="results-table">
-                <h3>Detailed Results by Touchpoint</h3>
-                <table id="resultsTable">
-                    <thead>
-                        <tr>
-                            <th>Touchpoint</th>
-                            <th>Lookback Days</th>
-                            <th>Reminders Sent</th>
-                            <th>Conversions</th>
-                            <th>Conversion Rate</th>
-                            <th>Sample Days</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
+      {/* Touchpoint Selection */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Calendar className="w-5 h-5 text-blue-600" />
+          <h2 className="text-xl font-semibold">Follow-Up Touchpoint</h2>
         </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {Object.entries(touchpoints).map(([key, touchpoint]) => (
+            <button
+              key={key}
+              onClick={() => setSelectedTouchpoint(key)}
+              className={`p-3 rounded-lg border text-center transition-colors ${
+                selectedTouchpoint === key
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:border-blue-300'
+              }`}
+            >
+              <div className="font-medium text-sm">{touchpoint.name}</div>
+              <div className="text-xs opacity-75">{touchpoint.lookback} days</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Month Selection */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Calendar className="w-5 h-5 text-purple-600" />
+          <h2 className="text-xl font-semibold">Month Filter</h2>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => setSelectedMonth('all')}
+            className={`px-4 py-2 rounded-lg border transition-colors ${
+              selectedMonth === 'all'
+                ? 'bg-purple-600 text-white border-purple-600'
+                : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
+            }`}
+          >
+            All Months
+          </button>
+          {availableMonths.map(month => (
+            <button
+              key={month}
+              onClick={() => setSelectedMonth(month)}
+              className={`px-4 py-2 rounded-lg border transition-colors ${
+                selectedMonth === month
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
+              }`}
+            >
+              {month}
+            </button>
+          ))}
+        </div>
+        {selectedMonth !== 'all' && (
+          <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded">
+            <p className="text-purple-800 text-sm">
+              📅 Viewing results for: <strong>{selectedMonth}</strong> ({touchpoints[selectedTouchpoint]?.name})
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">
+                {selectedMonth === 'all' ? 'Total Reminders Sent' : `Reminders Sent (${selectedMonth})`}
+              </p>
+              <p className="text-2xl font-bold text-gray-900">{totalReminders}</p>
+            </div>
+            <Users className="w-8 h-8 text-blue-600" />
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">
+                {selectedMonth === 'all' ? 'Total Conversions' : `Conversions (${selectedMonth})`}
+              </p>
+              <p className="text-2xl font-bold text-gray-900">{totalConversions}</p>
+            </div>
+            <TrendingUp className="w-8 h-8 text-green-600" />
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">
+                {selectedMonth === 'all' ? 'Overall Conversion Rate' : `Conversion Rate (${selectedMonth})`}
+              </p>
+              <p className="text-2xl font-bold text-gray-900">{overallRate}%</p>
+            </div>
+            <BarChart3 className="w-8 h-8 text-purple-600" />
+          </div>
+        </div>
+      </div>
+
+      {/* Results Table */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <BarChart3 className="w-5 h-5 text-blue-600" />
+          <h2 className="text-xl font-semibold">
+            {selectedMonth === 'all' ? 'Monthly Conversion Results' : `Detailed Results - ${selectedMonth}`}
+          </h2>
+          <span className="text-sm text-gray-500">({touchpoints[selectedTouchpoint]?.name})</span>
+        </div>
+        
+        {filteredResults.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left py-3 px-4 font-semibold text-gray-900">Month</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-900">Reminders Sent</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-900">Conversions</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-900">Conversion Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredResults.map((result, index) => (
+                  <tr key={result.month} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                    <td className="py-3 px-4 text-gray-900">{result.month}</td>
+                    <td className="py-3 px-4 text-right text-gray-900">{result.remindersSent}</td>
+                    <td className="py-3 px-4 text-right text-gray-900">{result.conversions}</td>
+                    <td className="py-3 px-4 text-right">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        parseFloat(result.conversionRate) >= 20 
+                          ? 'bg-green-100 text-green-800'
+                          : parseFloat(result.conversionRate) >= 10
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {result.conversionRate}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            {parsedData.length === 0 
+              ? 'Upload your CSV data to see conversion results'
+              : 'No data available for the selected touchpoint'
+            }
+          </div>
+        )}
+      </div>
+
+      {/* Implementation Notes */}
+      <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <h3 className="font-semibold text-blue-900 mb-2">Implementation Logic:</h3>
+        <ul className="text-sm text-blue-800 space-y-1">
+          <li>• For each date, looks back X days to find patients who had appointments</li>
+          <li>• Excludes patients who already rebooked between the reference date and "today"</li>
+          <li>• Counts remaining patients as "reminders sent"</li>
+          <li>• Tracks conversions within 30 days after the reminder date</li>
+          <li>• Groups results by calendar month for trending analysis</li>
+        </ul>
+      </div>
     </div>
+  );
+};
 
-    <script>
-        // Global variables
-        let rawData = [];
-        let results = {};
-        let chart = null;
-
-        // Touchpoint definitions - days to look back from "today"
-        const touchpoints = {
-            '2 Weeks': 14,
-            '6 Weeks': 42,
-            '3 Months': 90,
-            '5 Months': 150,
-            'Script Expiry': 175,
-            '8 Months': 240,
-            '12 Months': 365,
-            '18 Months': 545,
-            '24 Months': 730
-        };
-
-        // Utility functions
-        function updateProgress(percent, text) {
-            document.getElementById('progressBar').style.width = percent + '%';
-            document.getElementById('loadingText').textContent = text;
-        }
-
-        function showDebug(message) {
-            console.log(message);
-            const debugSection = document.getElementById('debugSection');
-            const debugDiv = document.createElement('div');
-            debugDiv.className = 'debug-info';
-            debugDiv.textContent = new Date().toLocaleTimeString() + ': ' + message;
-            debugSection.appendChild(debugDiv);
-        }
-
-        function showAlert(message, type = 'info') {
-            const alertSection = document.getElementById('alertSection');
-            const alert = document.createElement('div');
-            alert.className = `alert ${type}`;
-            alert.textContent = message;
-            alertSection.appendChild(alert);
-        }
-
-        function showLoading() {
-            document.getElementById('loadingSection').style.display = 'block';
-            document.getElementById('dashboardContent').style.display = 'none';
-        }
-
-        function hideLoading() {
-            document.getElementById('loadingSection').style.display = 'none';
-            document.getElementById('dashboardContent').style.display = 'block';
-        }
-
-        // Parse date from DD/MM/YYYY format
-        function parseDate(dateStr) {
-            if (!dateStr || dateStr === '') return null;
-            
-            // Handle DD/MM/YYYY format
-            if (dateStr.includes('/')) {
-                const [day, month, year] = dateStr.split('/');
-                if (day && month && year) {
-                    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-                    if (!isNaN(date.getTime())) {
-                        return date;
-                    }
-                }
-            }
-            
-            // Fallback to standard parsing
-            const date = new Date(dateStr);
-            return !isNaN(date.getTime()) ? date : null;
-        }
-
-        // Parse CSV data
-        function parseCSV(csvText) {
-            const lines = csvText.split('\n').filter(line => line.trim());
-            if (lines.length === 0) return [];
-            
-            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-            showDebug(`Found ${headers.length} columns: ${headers.join(', ')}`);
-            
-            const data = [];
-            for (let i = 1; i < lines.length; i++) {
-                const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
-                if (values.length >= 2) {
-                    const row = {
-                        INTERNALID: values[0] || '',  // Column A
-                        APPOINTMENTDATE: values[9] || ''  // Column J (index 9)
-                    };
-                    
-                    if (row.INTERNALID && row.APPOINTMENTDATE) {
-                        data.push(row);
-                    }
-                }
-            }
-            
-            showDebug(`Parsed ${data.length} valid records`);
-            return data;
-        }
-
-        // Calculate what a patient's LASTAPPOINTMENTDATE would have been on a specific historical date
-        function getPatientLastAppointmentAsOf(patientId, asOfDate) {
-            const patientAppointments = rawData
-                .filter(row => row.INTERNALID === patientId)
-                .map(row => parseDate(row.APPOINTMENTDATE))
-                .filter(date => date !== null && date <= asOfDate) // Only appointments on or before asOfDate
-                .sort((a, b) => b - a); // Sort descending (most recent first)
-            
-            return patientAppointments.length > 0 ? patientAppointments[0] : null;
-        }
-
-        // CORRECT: Historical time-travel CRM simulation
-        function performHistoricalAnalysis() {
-            const selectedMonth = document.getElementById('monthFilter').value;
-            
-            results = {};
-            Object.keys(touchpoints).forEach(tp => {
-                results[tp] = { sent: 0, converted: 0, rate: 0, sampleDays: 0 };
-            });
-
-            showDebug(`=== HISTORICAL TIME-TRAVEL ANALYSIS ===`);
-            showDebug(`Processing ${rawData.length} appointment records`);
-            showDebug(`Selected month filter: ${selectedMonth || 'All months'}`);
-
-            // Get all unique patients
-            const allPatients = [...new Set(rawData.map(row => row.INTERNALID))].filter(id => id);
-            showDebug(`Found ${allPatients.length} unique patients`);
-
-            // Get all unique appointment dates to simulate historical CRM runs
-            const allAppointmentDates = [...new Set(rawData.map(row => row.APPOINTMENTDATE))]
-                .map(dateStr => parseDate(dateStr))
-                .filter(date => date !== null)
-                .sort((a, b) => a - b);
-
-            showDebug(`Will simulate CRM running on ${allAppointmentDates.length} historical dates`);
-
-            let processedDates = 0;
-
-            // For each historical date, simulate what the CRM would have done
-            allAppointmentDates.forEach(todayDate => {
-                processedDates++;
-                
-                if (processedDates % 5 === 0) {
-                    updateProgress(20 + (processedDates / allAppointmentDates.length) * 70, 
-                        `Time-traveling to date ${processedDates}/${allAppointmentDates.length}...`);
-                }
-
-                const todayStr = todayDate.toISOString().split('T')[0];
-                const todayMonth = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}`;
-
-                // Skip if not in selected month
-                if (selectedMonth && selectedMonth !== todayMonth) {
-                    return;
-                }
-
-                // Debug first few dates
-                if (processedDates <= 3) {
-                    showDebug(`\n=== TIME-TRAVEL TO ${todayStr} ===`);
-                }
-
-                // For each touchpoint, check who should get reminders today
-                Object.entries(touchpoints).forEach(([touchpointName, lookbackDays]) => {
-                    const referenceDate = new Date(todayDate);
-                    referenceDate.setDate(referenceDate.getDate() - lookbackDays);
-                    const referenceDateStr = referenceDate.toISOString().split('T')[0];
-
-                    if (processedDates <= 3) {
-                        showDebug(`\n${touchpointName}: Looking for patients whose LASTAPPOINTMENTDATE = ${referenceDateStr} on ${todayStr}`);
-                    }
-
-                    // Find patients whose LASTAPPOINTMENTDATE (as of todayDate) equals the reference date
-                    const eligiblePatients = [];
-                    
-                    allPatients.forEach(patientId => {
-                        const lastAppointmentAsOfToday = getPatientLastAppointmentAsOf(patientId, todayDate);
-                        
-                        if (lastAppointmentAsOfToday && lastAppointmentAsOfToday.getTime() === referenceDate.getTime()) {
-                            eligiblePatients.push({
-                                patientId: patientId,
-                                lastAppointmentDate: lastAppointmentAsOfToday
-                            });
-                        }
-                    });
-
-                    if (processedDates <= 3) {
-                        showDebug(`  Found ${eligiblePatients.length} patients eligible for ${touchpointName} reminders`);
-                        if (eligiblePatients.length > 0) {
-                            const samplePatients = eligiblePatients.slice(0, 3).map(p => p.patientId);
-                            showDebug(`  Sample patient IDs: ${samplePatients.join(', ')}`);
-                            
-                            // Show time-travel example for first patient
-                            if (eligiblePatients.length > 0) {
-                                const firstPatient = eligiblePatients[0];
-                                const allAppointmentsForPatient = rawData
-                                    .filter(row => row.INTERNALID === firstPatient.patientId)
-                                    .map(row => parseDate(row.APPOINTMENTDATE).toISOString().split('T')[0])
-                                    .sort();
-                                showDebug(`    Patient ${firstPatient.patientId} appointments: ${allAppointmentsForPatient.join(', ')}`);
-                                showDebug(`    As of ${todayStr}, their LASTAPPOINTMENTDATE = ${referenceDateStr}`);
-                            }
-                        }
-                    }
-
-                    if (eligiblePatients.length === 0) {
-                        return; // No reminders to send for this touchpoint today
-                    }
-
-                    // Count reminders sent
-                    const remindersSent = eligiblePatients.length;
-                    results[touchpointName].sent += remindersSent;
-                    if (remindersSent > 0) {
-                        results[touchpointName].sampleDays += 1;
-                    }
-
-                    if (processedDates <= 3 && remindersSent > 0) {
-                        showDebug(`  ✅ ${remindersSent} reminders sent for ${touchpointName} on ${todayStr}`);
-                    }
-
-                    // Check for conversions (appointments within 0-30 days after today)
-                    const conversionWindowEnd = new Date(todayDate);
-                    conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
-
-                    let conversions = 0;
-                    eligiblePatients.forEach((patientInfo, index) => {
-                        const patientId = patientInfo.patientId;
-                        
-                        // Look for any appointment by this patient within 0-30 days after today
-                        const conversionAppointments = rawData.filter(row => {
-                            if (row.INTERNALID !== patientId) return false;
-                            
-                            const appointmentDate = parseDate(row.APPOINTMENTDATE);
-                            if (!appointmentDate) return false;
-                            
-                            // Check if appointment is within the conversion window (today to today+30)
-                            return appointmentDate >= todayDate && appointmentDate <= conversionWindowEnd;
-                        });
-
-                        const hasConversion = conversionAppointments.length > 0;
-
-                        // Show detailed conversion info for first few patients
-                        if (processedDates <= 3 && index < 2) {
-                            if (hasConversion) {
-                                const conversionDates = conversionAppointments.map(r => parseDate(r.APPOINTMENTDATE).toISOString().split('T')[0]);
-                                showDebug(`    Patient ${patientId}: CONVERTED on ${conversionDates.join(', ')} ✅`);
-                            } else {
-                                showDebug(`    Patient ${patientId}: No conversion within 30 days ❌`);
-                            }
-                        }
-
-                        if (hasConversion) {
-                            conversions++;
-                        }
-                    });
-
-                    results[touchpointName].converted += conversions;
-
-                    if (processedDates <= 3 && (remindersSent > 0 || conversions > 0)) {
-                        const rate = remindersSent > 0 ? (conversions / remindersSent * 100).toFixed(1) : 0;
-                        showDebug(`  CONVERSIONS: ${conversions}/${remindersSent} (${rate}%)`);
-                    }
-                });
-            });
-
-            // Calculate final conversion rates
-            Object.keys(results).forEach(tp => {
-                const data = results[tp];
-                data.rate = data.sent > 0 ? (data.converted / data.sent * 100) : 0;
-            });
-
-            showDebug(`\n=== HISTORICAL ANALYSIS COMPLETE ===`);
-            showDebug(`Time-traveled through ${processedDates} historical dates`);
-
-            // Show final breakdown
-            showDebug(`\n=== FINAL RESULTS ===`);
-            Object.entries(results).forEach(([name, data]) => {
-                if (data.sent > 0) {
-                    showDebug(`${name}: ${data.sent} reminders → ${data.converted} conversions (${data.rate.toFixed(1)}%) over ${data.sampleDays} days`);
-                }
-            });
-
-            // Sanity check
-            showDebug(`\n=== SANITY CHECKS ===`);
-            const sortedByLookback = Object.entries(touchpoints).sort((a, b) => a[1] - b[1]);
-            
-            showDebug(`Reminder counts by lookback period:`);
-            sortedByLookback.forEach(([name, days]) => {
-                const count = results[name].sent;
-                showDebug(`  ${name} (${days} days): ${count} reminders`);
-            });
-        }
-
-        // Load data from Google Sheets
-        async function loadData() {
-            try {
-                showLoading();
-                updateProgress(10, 'Connecting to Google Sheets...');
-                
-                const response = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vR0aMS5opoqMJG2BGhIy5Wet_7v6CtiWRbIrUsV3zMzNTnKasJnKsD7ooMd_u9bi7eDAIbYN5_ysXYl/pub?output=csv&gid=1705675423');
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                updateProgress(30, 'Downloading data...');
-                const csvText = await response.text();
-                
-                updateProgress(50, 'Parsing CSV data...');
-                rawData = parseCSV(csvText);
-                
-                if (rawData.length === 0) {
-                    throw new Error('No valid data found in CSV');
-                }
-                
-                updateProgress(70, 'Performing historical time-travel analysis...');
-                performHistoricalAnalysis();
-                
-                updateProgress(90, 'Rendering dashboard...');
-                renderDashboard();
-                
-                updateProgress(100, 'Complete!');
-                setTimeout(hideLoading, 500);
-                
-            } catch (error) {
-                console.error('Error loading data:', error);
-                showAlert(`Error loading data: ${error.message}`, 'error');
-                hideLoading();
-            }
-        }
-
-        // Load sample data for testing
-        function loadSampleData() {
-            showLoading();
-            updateProgress(20, 'Generating sample data...');
-            
-            rawData = [];
-            const samplePatients = 30;  // Smaller sample for faster processing
-            const startDate = new Date();
-            startDate.setDate(startDate.getDate() - 400); // Start 400 days ago
-            
-            for (let i = 1; i <= samplePatients; i++) {
-                const patientId = `P${i.toString().padStart(3, '0')}`;
-                
-                // Generate 1-3 appointments per patient over time
-                const numAppointments = 1 + Math.floor(Math.random() * 3);
-                
-                for (let j = 0; j < numAppointments; j++) {
-                    const appointmentDate = new Date(startDate);
-                    appointmentDate.setDate(appointmentDate.getDate() + (j * 100) + Math.random() * 80);
-                    
-                    // Don't create future appointments
-                    if (appointmentDate > new Date()) continue;
-                    
-                    rawData.push({
-                        INTERNALID: patientId,
-                        APPOINTMENTDATE: appointmentDate.toISOString().split('T')[0]
-                    });
-                }
-            }
-            
-            // Sort by date
-            rawData.sort((a, b) => new Date(a.APPOINTMENTDATE) - new Date(b.APPOINTMENTDATE));
-            
-            updateProgress(50, 'Performing historical time-travel analysis...');
-            showDebug(`Generated ${rawData.length} appointment records`);
-            
-            performHistoricalAnalysis();
-            
-            updateProgress(80, 'Rendering dashboard...');
-            renderDashboard();
-            
-            updateProgress(100, 'Sample data loaded!');
-            showAlert('Sample data loaded with historical time-travel analysis.', 'info');
-            
-            setTimeout(hideLoading, 500);
-        }
-
-        // Render dashboard
-        function renderDashboard() {
-            renderSummaryCards();
-            renderChart();
-            renderTable();
-            renderVerificationExamples();
-        }
-
-        function renderSummaryCards() {
-            let totalSent = 0, totalConverted = 0, bestRate = 0, bestTouchpoint = 'N/A';
-            
-            Object.entries(results).forEach(([name, data]) => {
-                totalSent += data.sent;
-                totalConverted += data.converted;
-                
-                if (data.rate > bestRate && data.sent > 0) {
-                    bestRate = data.rate;
-                    bestTouchpoint = name;
-                }
-            });
-            
-            const overallRate = totalSent > 0 ? (totalConverted / totalSent * 100) : 0;
-            
-            document.getElementById('totalReminders').textContent = totalSent.toLocaleString();
-            document.getElementById('totalConversions').textContent = totalConverted.toLocaleString();
-            document.getElementById('overallRate').textContent = overallRate.toFixed(1) + '%';
-            document.getElementById('bestTouchpoint').textContent = bestTouchpoint;
-        }
-
-        function renderChart() {
-            const ctx = document.getElementById('conversionChart').getContext('2d');
-            
-            if (chart) chart.destroy();
-            
-            const touchpointNames = Object.keys(results);
-            const conversionRates = Object.values(results).map(d => d.rate);
-            
-            chart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: touchpointNames,
-                    datasets: [{
-                        label: 'Conversion Rate (%)',
-                        data: conversionRates,
-                        backgroundColor: 'rgba(74, 124, 89, 0.7)',
-                        borderColor: 'rgba(45, 90, 39, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            max: Math.max(100, Math.max(...conversionRates) * 1.1)
-                        }
-                    },
-                    plugins: {
-                        legend: { display: false }
-                    }
-                }
-            });
-        }
-
-        function renderVerificationExamples() {
-            const container = document.getElementById('verificationExamples');
-            
-            if (rawData.length === 0) {
-                container.innerHTML = 'Load data to see time-travel examples.';
-                return;
-            }
-            
-            let examples = `📋 HISTORICAL TIME-TRAVEL VERIFICATION:\n\n`;
-            examples += `This analysis simulates your CRM running on each historical date.\n`;
-            examples += `For each date, it calculates what each patient's LASTAPPOINTMENTDATE would have been.\n\n`;
-            
-            // Show example of how a patient's LASTAPPOINTMENTDATE changes over time
-            const samplePatient = rawData[0]?.INTERNALID;
-            if (samplePatient) {
-                const patientAppointments = rawData
-                    .filter(row => row.INTERNALID === samplePatient)
-                    .map(row => parseDate(row.APPOINTMENTDATE))
-                    .filter(date => date)
-                    .sort((a, b) => a - b);
-                
-                examples += `🔍 TIME-TRAVEL EXAMPLE - Patient ${samplePatient}:\n`;
-                examples += `Appointments: ${patientAppointments.map(d => d.toISOString().split('T')[0]).join(', ')}\n\n`;
-                
-                examples += `Historical LASTAPPOINTMENTDATE evolution:\n`;
-                patientAppointments.forEach((apptDate, index) => {
-                    const dateStr = apptDate.toISOString().split('T')[0];
-                    examples += `• On ${dateStr}: LASTAPPOINTMENTDATE = ${dateStr}\n`;
-                    
-                    if (index < patientAppointments.length - 1) {
-                        const nextAppt = patientAppointments[index + 1];
-                        const daysBetween = Math.floor((nextAppt - apptDate) / (1000 * 60 * 60 * 24));
-                        examples += `  (stays ${dateStr} for ${daysBetween} days until next appointment)\n`;
-                    }
-                });
-            }
-            
-            examples += `\n✅ VERIFICATION PROCESS:\n`;
-            examples += `1. Pick any historical date from the debug output\n`;
-            examples += `2. For each patient, manually calculate their LASTAPPOINTMENTDATE as of that date\n`;
-            examples += `3. Check which touchpoint reference dates match those LASTAPPOINTMENTDATE values\n`;
-            examples += `4. Verify those patients would get SMS reminders on that date\n`;
-            examples += `5. Check for conversions in the following 30 days\n`;
-            
-            container.innerHTML = examples;
-        }
-
-        function renderTable() {
-            const tbody = document.querySelector('#resultsTable tbody');
-            tbody.innerHTML = '';
-            
-            Object.entries(results).forEach(([name, data]) => {
-                const row = tbody.insertRow();
-                row.innerHTML = `
-                    <td>${name}</td>
-                    <td>${touchpoints[name]} days</td>
-                    <td>${data.sent.toLocaleString()}</td>
-                    <td>${data.converted.toLocaleString()}</td>
-                    <td>${data.rate.toFixed(1)}%</td>
-                    <td>${data.sampleDays}</td>
-                `;
-            });
-        }
-
-        function setupMonthFilter() {
-            const select = document.getElementById('monthFilter');
-            
-            for (let i = 0; i < 18; i++) {
-                const date = new Date();
-                date.setMonth(date.getMonth() - i);
-                const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-                const displayStr = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
-                
-                const option = document.createElement('option');
-                option.value = monthStr;
-                option.textContent = displayStr;
-                select.appendChild(option);
-            }
-            
-            select.addEventListener('change', () => {
-                if (rawData.length > 0) {
-                    performHistoricalAnalysis();
-                    renderDashboard();
-                }
-            });
-        }
-
-        function exportData() {
-            if (!results || Object.keys(results).length === 0) {
-                showAlert('No data to export. Please load data first.', 'error');
-                return;
-            }
-            
-            let csv = 'SMS Conversion Report - Historical Time-Travel Analysis\n';
-            csv += `Generated: ${new Date().toLocaleString()}\n\n`;
-            csv += 'Touchpoint,Lookback Days,Reminders Sent,Conversions,Conversion Rate,Sample Days\n';
-            
-            Object.entries(results).forEach(([name, data]) => {
-                csv += `"${name}",${touchpoints[name]},${data.sent},${data.converted},${data.rate.toFixed(1)}%,${data.sampleDays}\n`;
-            });
-            
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = `sms-conversion-historical-${new Date().toISOString().split('T')[0]}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-            
-            showAlert('Report exported successfully!', 'info');
-        }
-
-        // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
-            setupMonthFilter();
-            showAlert('Historical Time-Travel Analysis ready! This calculates what each patient\'s LASTAPPOINTMENTDATE would have been on each historical date.', 'info');
-        });
-    </script>
-</body>
-</html>
+export default ConversionDashboard;
