@@ -785,6 +785,19 @@
                 button.textContent = month;
                 monthButtons.appendChild(button);
             });
+
+            // Add event listener directly to the month buttons container
+            monthButtons.removeEventListener('click', handleMonthButtonClick); // Remove any existing listener
+            monthButtons.addEventListener('click', handleMonthButtonClick);
+        }
+
+        // Month button click handler
+        function handleMonthButtonClick(e) {
+            if (e.target.dataset.month) {
+                selectedMonth = e.target.dataset.month;
+                console.log('Month selected:', selectedMonth);
+                updateDisplay();
+            }
         }
 
         // Update display
@@ -860,6 +873,15 @@
             document.getElementById('currentTouchpointLabel').textContent = `(${touchpoints[selectedTouchpoint].name})`;
         }
 
+        // Touchpoint button click handler
+        function handleTouchpointButtonClick(e) {
+            if (e.target.dataset.touchpoint) {
+                selectedTouchpoint = e.target.dataset.touchpoint;
+                console.log('Touchpoint selected:', selectedTouchpoint);
+                updateDisplay();
+            }
+        }
+
         // File upload handler
         document.getElementById('csvFile').addEventListener('change', function(event) {
             const file = event.target.files[0];
@@ -887,24 +909,13 @@
             processCsvData('SAMPLE_DATA');
         });
 
-        // Touchpoint buttons
-        document.getElementById('touchpointButtons').addEventListener('click', function(e) {
-            if (e.target.dataset.touchpoint) {
-                selectedTouchpoint = e.target.dataset.touchpoint;
-                updateDisplay();
-            }
-        });
-
-        // Month buttons
-        document.addEventListener('click', function(e) {
-            if (e.target.dataset.month) {
-                selectedMonth = e.target.dataset.month;
-                updateDisplay();
-            }
-        });
+        // Touchpoint buttons - use direct container event handling
+        document.getElementById('touchpointButtons').addEventListener('click', handleTouchpointButtonClick);
 
         // Initialize
         updateButtonStates();
+        
+        console.log('Dashboard initialized - Event listeners attached');
     </script>
 </body>
 </html>
