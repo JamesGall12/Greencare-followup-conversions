@@ -260,13 +260,18 @@
             </div>
             <div class="file-upload">
                 <input type="file" id="csvFile" accept=".csv" />
+                <div style="margin: 16px 0; text-align: center;">
+                    <button id="autoLoadBtn" style="background: #2563eb; color: white; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
+                        🔗 Auto-Load from Google Sheets
+                    </button>
+                </div>
                 <div id="uploadStatus" style="margin-top: 8px; padding: 8px; border-radius: 4px; display: none;">
                     <div id="processingStatus" style="color: #2563eb;">
                         🔄 Processing file...
                     </div>
                 </div>
                 <p style="font-size: 14px; color: #6b7280; margin-top: 8px;">
-                    Upload your clinic CSV file<br>
+                    Upload your clinic CSV file or auto-load from Google Sheets<br>
                     <strong>Column A</strong> = Patient IDs (INTERNALID)<br>
                     <strong>Column J</strong> = Appointment Dates (APPOINTMENTDATE)
                 </p>
@@ -758,9 +763,21 @@
             }
         });
 
-        // Initialize
+        // Auto-load button event listener
+        document.getElementById('autoLoadBtn').addEventListener('click', function() {
+            loadGoogleSheetsData();
+        });
+
+        // Initialize and try auto-load on page load
         updateTouchpointButtonStates();
         updateMonthButtonStates();
+        
+        // Auto-load data when page loads
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                loadGoogleSheetsData();
+            }, 1000); // Wait 1 second for page to fully load
+        });
     </script>
 </body>
 </html>
