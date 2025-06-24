@@ -279,6 +279,12 @@
                 <button id="loadSampleBtn" class="auto-button">
                     📊 Load Sample Data (Demo)
                 </button>
+                <button id="verifyLogicBtn" class="auto-button" style="background: #059669; margin-left: 8px;">
+                    🔍 Verify Logic (Debug Mode)
+                </button>
+                <button id="exportDataBtn" class="auto-button" style="background: #7c3aed; margin-left: 8px;" disabled>
+                    📤 Export Results
+                </button>
                 <div id="statusMessage" class="hidden"></div>
                 <p style="font-size: 14px; color: #6b7280; margin-top: 8px;">
                     Upload your clinic CSV file or use sample data<br>
@@ -430,12 +436,12 @@
                     </ul>
                 </div>
                 <div>
-                    <h4 style="font-weight: 500; margin-bottom: 4px; color: #1e40af;">Expected Data:</h4>
+                    <h4 style="font-weight: 500; margin-bottom: 4px; color: #1e40af;">Data Verification:</h4>
                     <ul style="font-size: 14px; color: #1e40af;">
-                        <li>• <strong>Column A</strong> = Patient IDs</li>
-                        <li>• <strong>Column J</strong> = Appointment Dates</li>
-                        <li>• CSV format without headers</li>
-                        <li>• Ready for conversion analysis</li>
+                        <li>• Click "Verify Logic" for detailed calculation breakdown</li>
+                        <li>• Export results to verify in Excel/other tools</li>
+                        <li>• Check sample calculations match your expectations</li>
+                        <li>• Validate business logic makes sense for your clinic</li>
                     </ul>
                 </div>
             </div>
@@ -504,18 +510,210 @@
             return { data: data, errors: [] };
         }
 
-        // Show status message
-        function showStatus(message, type = 'info') {
+        // Show status message with progress support
+        function showStatus(message, type = 'info', showProgress = false) {
             const statusEl = document.getElementById('statusMessage');
             statusEl.className = `status-message status-${type}`;
-            statusEl.textContent = message;
+            
+            if (showProgress) {
+                statusEl.innerHTML = `
+                    <div>${message}</div>
+                    <div style="background: #e5e7eb; border-radius: 4px; height: 8px; margin-top: 8px; overflow: hidden;">
+                        <div id="progressBar" style="background: #2563eb; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+                    </div>
+                `;
+            } else {
+                statusEl.textContent = message;
+            }
+            
             statusEl.classList.remove('hidden');
             
-            if (type === 'success') {
+            if (type === 'success' && !showProgress) {
                 setTimeout(() => {
                     statusEl.classList.add('hidden');
                 }, 3000);
             }
+        }
+
+        // Export conversion results for verification
+        function exportConversionResults() {
+            if (Object.keys(conversionResults).length === 0) {
+                alert('No conversion results to export. Please wait for calculations to complete.');
+                return;
+            }
+            
+            console.log('📤 Exporting conversion results...');
+            
+            // Create CSV content
+            let csvContent = 'Touchpoint,Month,Reminders Sent,Conversions,Conversion Rate\n';
+            
+            Object.keys(touchpoints).forEach(touchpointKey => {
+                const touchpointName = touchpoints[touchpointKey].name;
+                const results = conversionResults[touchpointKey] || [];
+                
+                results.forEach(result => {
+                    csvContent += `"${touchpointName}","${result.month}",${result.remindersSent},${result.conversions},"${result.conversionRate}%"\n`;
+                });
+            });
+            
+            // Create and download file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', 'conversion_analysis_results.csv');
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                showStatus('✅ Results exported to conversion_analysis_results.csv', 'success');
+                console.log('📤 Export complete');
+            } else {
+                alert('Your browser does not support file downloads');
+            }
+        }
+
+        // Verification mode - detailed logic breakdown for accuracy checking
+        function verifyConversionLogic() {
+            if (parsedData.length === 0) {
+                alert('Please upload your CSV data first');
+                return;
+            }
+            
+            console.log('\n🔍 ===== VERIFICATION MODE - DETAILED LOGIC BREAKDOWN =====');
+            showStatus('🔍 Running verification mode...', 'info');
+            
+            // Use 6-month touchpoint for verification
+            const touchpoint = touchpoints['6months'];
+            const allDates = [...new Set(parsedData.map(row => row.APPOINTMENTDATE))].sort();
+            
+            // Take first 3 dates for detailed verification
+            const testDates = allDates.slice(0, 3);
+            
+            console.log(`\n📅 Testing with first 3 dates: ${testDates.join(', ')}`);
+            console.log(`🎯 Using 6-month touchpoint (${touchpoint.lookback} days lookback)`);
+            
+            testDates.forEach((todayDate, index) => {
+                console.log(`\n==================== VERIFICATION ${index + 1} ====================`);
+                console.log(`📅 SIMULATED "TODAY": ${todayDate}`);
+                
+                const today = parseAustralianDate(todayDate);
+                if (!today) {
+                    console.log('❌ Invalid date format');
+                    return;
+                }
+                
+                console.log(`📅 Parsed today: ${today.toDateString()}`);
+                
+                // Calculate reference date
+                const referenceDate = new Date(today);
+                referenceDate.setDate(referenceDate.getDate() - touchpoint.lookback);
+                console.log(`📅 Reference date (${touchpoint.lookback} days back): ${referenceDate.toDateString()}`);
+                
+                // STEP 1: Find eligible patients
+                console.log(`\n🔍 STEP 1: Finding patients with appointments on ${referenceDate.toDateString()}`);
+                const eligiblePatients = parsedData.filter(row => {
+                    const appointmentDate = parseAustralianDate(row.APPOINTMENTDATE);
+                    if (!appointmentDate) return false;
+                    return appointmentDate.toDateString() === referenceDate.toDateString();
+                });
+                
+                console.log(`✅ Found ${eligiblePatients.length} patients with appointments on reference date:`);
+                eligiblePatients.slice(0, 5).forEach(patient => {
+                    console.log(`   - Patient ${patient.INTERNALID}: ${patient.APPOINTMENTDATE}`);
+                });
+                if (eligiblePatients.length > 5) {
+                    console.log(`   ... and ${eligiblePatients.length - 5} more`);
+                }
+                
+                // STEP 2: Remove already rebooked patients
+                console.log(`\n🔍 STEP 2: Removing patients who already rebooked between ${referenceDate.toDateString()} and ${today.toDateString()}`);
+                const patientsNeedingReminder = [];
+                const alreadyRebooked = [];
+                
+                eligiblePatients.forEach(patient => {
+                    const patientId = patient.INTERNALID;
+                    const rebookingAppointments = parsedData.filter(row => {
+                        if (row.INTERNALID !== patientId) return false;
+                        const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
+                        if (!apptDate) return false;
+                        return apptDate > referenceDate && apptDate < today;
+                    });
+                    
+                    if (rebookingAppointments.length > 0) {
+                        alreadyRebooked.push({
+                            patient: patient,
+                            rebookings: rebookingAppointments
+                        });
+                    } else {
+                        patientsNeedingReminder.push(patient);
+                    }
+                });
+                
+                console.log(`❌ Excluded ${alreadyRebooked.length} patients who already rebooked:`);
+                alreadyRebooked.slice(0, 3).forEach(item => {
+                    console.log(`   - Patient ${item.patient.INTERNALID} rebooked on: ${item.rebookings.map(r => r.APPOINTMENTDATE).join(', ')}`);
+                });
+                
+                console.log(`✅ ${patientsNeedingReminder.length} patients need reminders:`);
+                patientsNeedingReminder.slice(0, 3).forEach(patient => {
+                    console.log(`   - Patient ${patient.INTERNALID}`);
+                });
+                
+                // STEP 3: Check for conversions
+                console.log(`\n🔍 STEP 3: Checking for conversions within 30 days after ${today.toDateString()}`);
+                const conversionWindowEnd = new Date(today);
+                conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
+                console.log(`📅 Conversion window: ${today.toDateString()} to ${conversionWindowEnd.toDateString()}`);
+                
+                const conversions = [];
+                const noConversions = [];
+                
+                patientsNeedingReminder.forEach(patient => {
+                    const patientId = patient.INTERNALID;
+                    const conversionAppointments = parsedData.filter(row => {
+                        if (row.INTERNALID !== patientId) return false;
+                        const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
+                        if (!apptDate) return false;
+                        return apptDate > today && apptDate <= conversionWindowEnd;
+                    });
+                    
+                    if (conversionAppointments.length > 0) {
+                        conversions.push({
+                            patient: patient,
+                            conversions: conversionAppointments
+                        });
+                    } else {
+                        noConversions.push(patient);
+                    }
+                });
+                
+                console.log(`✅ ${conversions.length} patients converted:`);
+                conversions.forEach(item => {
+                    console.log(`   - Patient ${item.patient.INTERNALID} converted on: ${item.conversions.map(c => c.APPOINTMENTDATE).join(', ')}`);
+                });
+                
+                console.log(`❌ ${noConversions.length} patients did not convert`);
+                
+                // SUMMARY
+                console.log(`\n📊 SUMMARY FOR ${todayDate}:`);
+                console.log(`   📧 Reminders Sent: ${patientsNeedingReminder.length}`);
+                console.log(`   ✅ Conversions: ${conversions.length}`);
+                const rate = patientsNeedingReminder.length > 0 ? (conversions.length / patientsNeedingReminder.length * 100).toFixed(1) : '0.0';
+                console.log(`   📈 Conversion Rate: ${rate}%`);
+            });
+            
+            console.log('\n🔍 ===== VERIFICATION COMPLETE =====');
+            console.log('📋 To verify accuracy:');
+            console.log('1. Pick one of the test dates above');
+            console.log('2. Manually check the patient IDs and dates in your original data');
+            console.log('3. Verify the counts match your manual calculation');
+            console.log('4. Check that the conversion logic makes sense for your business');
+            
+            showStatus('✅ Verification complete - check console for detailed breakdown', 'success');
         }
 
         // Generate sample data for demo
@@ -571,6 +769,7 @@
 
                 // Map to your actual column positions: A=0, J=9
                 parsedData = parsed.data.map((row, index) => {
+                    // Only log first 3 rows to avoid console spam
                     if (index < 3) {
                         console.log(`Row ${index}:`, row);
                     }
@@ -586,10 +785,14 @@
                 console.log('Filtered data length:', parsedData.length);
 
                 if (parsedData.length > 0) {
-                    showStatus('✅ Data processed successfully!', 'success');
+                    showStatus('✅ Data loaded! Starting analysis...', 'success');
                     updateDataStatus();
-                    calculateAllConversions();
-                    updateDisplay();
+                    
+                    // Start the optimized conversion calculation
+                    setTimeout(() => {
+                        calculateAllConversions();
+                    }, 500); // Small delay to let UI update
+                    
                 } else {
                     showStatus('❌ No valid data found. Check your CSV format.', 'error');
                 }
@@ -628,14 +831,16 @@
             document.getElementById('dataStatus').classList.remove('hidden');
         }
 
-        // Calculate conversions for all touchpoints
+        // Calculate conversions for all touchpoints (back to working version with light optimizations)
         function calculateAllConversions() {
             console.log('=== STARTING CONVERSION CALCULATION ===');
             console.log('Total parsed data:', parsedData.length);
             
+            showStatus('🔄 Calculating conversions...', 'info');
+            
             // Check date formats first
             console.log('Sample appointment dates (DD/MM/YYYY format):');
-            parsedData.slice(0, 5).forEach((row, i) => {
+            parsedData.slice(0, 3).forEach((row, i) => {
                 const originalDate = row.APPOINTMENTDATE;
                 const parsedDate = parseAustralianDate(originalDate);
                 console.log(`${i}: "${originalDate}" -> parsed: ${parsedDate ? parsedDate.toDateString() : 'Invalid'}`);
@@ -651,7 +856,6 @@
 
                 const allDates = [...new Set(parsedData.map(row => row.APPOINTMENTDATE))];
                 console.log(`Unique appointment dates: ${allDates.length}`);
-                console.log('First few dates:', allDates.slice(0, 5));
 
                 let processedDates = 0;
                 let totalEligibleFound = 0;
@@ -662,7 +866,6 @@
                     try {
                         const today = parseAustralianDate(todayDate);
                         if (!today || isNaN(today.getTime())) {
-                            console.warn(`Invalid date: "${todayDate}"`);
                             return;
                         }
 
@@ -670,7 +873,7 @@
                         referenceDate.setDate(referenceDate.getDate() - touchpoint.lookback);
 
                         // Debug first few iterations
-                        if (index < 3) {
+                        if (index < 2) {
                             console.log(`\nIteration ${index}:`);
                             console.log(`Today: ${today.toDateString()}`);
                             console.log(`Reference date (${touchpoint.lookback} days back): ${referenceDate.toDateString()}`);
@@ -680,11 +883,10 @@
                         const eligiblePatients = parsedData.filter(row => {
                             const appointmentDate = parseAustralianDate(row.APPOINTMENTDATE);
                             if (!appointmentDate) return false;
-                            const matches = appointmentDate.toDateString() === referenceDate.toDateString();
-                            return matches;
+                            return appointmentDate.toDateString() === referenceDate.toDateString();
                         });
 
-                        if (index < 3) {
+                        if (index < 2) {
                             console.log(`Patients with appointments on ${referenceDate.toDateString()}: ${eligiblePatients.length}`);
                         }
 
@@ -702,7 +904,7 @@
                             return !hasRebookedAlready;
                         });
 
-                        if (index < 3) {
+                        if (index < 2) {
                             console.log(`Patients needing reminder: ${patientsNeedingReminder.length}`);
                         }
 
@@ -714,17 +916,15 @@
                             const conversionWindowEnd = new Date(today);
                             conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
 
-                            const hasConversion = parsedData.some(row => {
+                            return parsedData.some(row => {
                                 if (row.INTERNALID !== patientId) return false;
                                 const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
                                 if (!apptDate) return false;
                                 return apptDate > today && apptDate <= conversionWindowEnd;
                             });
-
-                            return hasConversion;
                         });
 
-                        if (index < 3) {
+                        if (index < 2) {
                             console.log(`Conversions found: ${conversions.length}`);
                             const conversionWindowEnd = new Date(today);
                             conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
@@ -770,7 +970,12 @@
             });
 
             console.log('=== CONVERSION CALCULATION COMPLETE ===');
+            showStatus('✅ Conversion analysis complete!', 'success');
             updateMonthButtons();
+            updateDisplay();
+            
+            // Enable export button
+            document.getElementById('exportDataBtn').disabled = false;
         }
 
         // Update month filter buttons
@@ -912,6 +1117,16 @@
         // Sample data button
         document.getElementById('loadSampleBtn').addEventListener('click', function() {
             processCsvData('SAMPLE_DATA');
+        });
+
+        // Verification button
+        document.getElementById('verifyLogicBtn').addEventListener('click', function() {
+            verifyConversionLogic();
+        });
+
+        // Export button
+        document.getElementById('exportDataBtn').addEventListener('click', function() {
+            exportConversionResults();
         });
 
         // Touchpoint buttons - ensure clean event handling
