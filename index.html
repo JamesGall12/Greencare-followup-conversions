@@ -494,13 +494,10 @@
             const processingStatus = document.getElementById('processingStatus');
             
             try {
-                const parsed = Papa.parse(csvText, {
-                    header: false,  // No headers in your CSV
-                    dynamicTyping: true,
-                    skipEmptyLines: true
-                });
+                // Use our fallback-enabled parser
+                const parsed = parseCSV(csvText);
 
-                console.log('Papa Parse results:', parsed);
+                console.log('CSV Parse results:', parsed);
                 console.log('Number of rows parsed:', parsed.data.length);
                 
                 if (parsed.errors && parsed.errors.length > 0) {
