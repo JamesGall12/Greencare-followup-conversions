@@ -442,17 +442,18 @@
         // Global variables
         let parsedData = [];
         let conversionResults = {};
-        let selectedTouchpoint = '2weeks';
+        let selectedTouchpoint = '6months'; // Changed default since 2weeks is removed
         let selectedMonth = 'all';
 
-        // Touchpoint definitions
+        // Touchpoint definitions - Updated for medical cannabis clinic
         const touchpoints = {
-            '2weeks': { name: '2 Week Follow-up', lookback: 14 },
-            '6weeks': { name: '6 Week Follow-up', lookback: 42 },
             '3months': { name: '3 Month Follow-up', lookback: 90 },
             '5months': { name: '5 Month Follow-up', lookback: 150 },
             '6months': { name: '6 Month Follow-up', lookback: 180 },
-            '12months': { name: '12 Month Follow-up', lookback: 365 }
+            '9months': { name: '9 Month Follow-up', lookback: 270 },
+            '12months': { name: '12 Month Follow-up', lookback: 365 },
+            '18months': { name: '18 Month Follow-up', lookback: 540 },
+            '24months': { name: '24 Month Follow-up', lookback: 720 }
         };
 
         // Parse DD/MM/YYYY date format correctly
