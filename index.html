@@ -260,7 +260,16 @@
             </div>
             <div class="file-upload">
                 <input type="file" id="csvFile" accept=".csv" />
-                <p style="font-size: 14px; color: #6b7280;">Upload your CSV file with INTERNALID and APPOINTMENTDATE columns</p>
+                <div id="uploadStatus" style="margin-top: 8px; padding: 8px; border-radius: 4px; display: none;">
+                    <div id="processingStatus" style="color: #2563eb;">
+                        🔄 Processing file...
+                    </div>
+                </div>
+                <p style="font-size: 14px; color: #6b7280; margin-top: 8px;">
+                    Upload your clinic CSV file<br>
+                    <strong>Column A</strong> = Patient IDs (INTERNALID)<br>
+                    <strong>Column J</strong> = Appointment Dates (APPOINTMENTDATE)
+                </p>
             </div>
             <div id="dataStatus" class="hidden">
                 <div class="status-success">
@@ -404,12 +413,12 @@
                     </ul>
                 </div>
                 <div>
-                    <h4 style="font-weight: 500; margin-bottom: 4px; color: #1e40af;">Expected Data:</h4>
+                    <h4 style="font-weight: 500; margin-bottom: 4px; color: #1e40af;">Your Data Mapping:</h4>
                     <ul style="font-size: 14px; color: #1e40af;">
-                        <li>• <strong>14,105 appointments</strong> to process</li>
-                        <li>• <strong>7,124 unique patients</strong></li>
-                        <li>• <strong>59% return rate</strong></li>
-                        <li>• Perfect for conversion analysis</li>
+                        <li>• <strong>Column A (position 0)</strong> = Patient IDs</li>
+                        <li>• <strong>Column J (position 9)</strong> = Appointment Dates</li>
+                        <li>• <strong>14,105 appointments</strong> expected</li>
+                        <li>• <strong>7,124 unique patients</strong> expected</li>
                     </ul>
                 </div>
             </div>
@@ -435,32 +444,113 @@
 
         // File upload handler
         document.getElementById('csvFile').addEventListener('change', function(event) {
+            console.log('File selected:', event.target.files[0]);
             const file = event.target.files[0];
-            if (file && file.type === 'text/csv') {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    processCsvData(e.target.result);
-                };
-                reader.readAsText(file);
+            
+            if (!file) {
+                console.log('No file selected');
+                return;
             }
+            
+            if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
+                alert('Please select a CSV file');
+                return;
+            }
+            
+            console.log('Reading file:', file.name, 'Size:', file.size);
+            
+            // Show processing status
+            const uploadStatus = document.getElementById('uploadStatus');
+            const processingStatus = document.getElementById('processingStatus');
+            uploadStatus.style.display = 'block';
+            processingStatus.textContent = '🔄 Reading file...';
+            processingStatus.style.color = '#2563eb';
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                console.log('File read successfully, length:', e.target.result.length);
+                processingStatus.textContent = '🔄 Processing data...';
+                
+                // Small delay to show the status update
+                setTimeout(() => {
+                    processCsvData(e.target.result);
+                }, 100);
+            };
+            reader.onerror = function(e) {
+                console.error('Error reading file:', e);
+                processingStatus.textContent = '❌ Error reading file';
+                processingStatus.style.color = '#dc2626';
+                alert('Error reading file. Please try again.');
+            };
+            reader.readAsText(file);
         });
 
         // Process CSV data
         function processCsvData(csvText) {
-            const parsed = Papa.parse(csvText, {
-                header: true,
-                dynamicTyping: true,
-                skipEmptyLines: true
-            });
+            console.log('Processing CSV data...');
+            console.log('CSV preview (first 500 chars):', csvText.substring(0, 500));
+            
+            const uploadStatus = document.getElementById('uploadStatus');
+            const processingStatus = document.getElementById('processingStatus');
+            
+            try {
+                const parsed = Papa.parse(csvText, {
+                    header: false,  // No headers in your CSV
+                    dynamicTyping: true,
+                    skipEmptyLines: true
+                });
 
-            parsedData = parsed.data.filter(row => 
-                row.INTERNALID && row.APPOINTMENTDATE
-            );
+                console.log('Papa Parse results:', parsed);
+                console.log('Number of rows parsed:', parsed.data.length);
+                
+                if (parsed.errors && parsed.errors.length > 0) {
+                    console.warn('Parse errors:', parsed.errors);
+                }
 
-            if (parsedData.length > 0) {
-                updateDataStatus();
-                calculateAllConversions();
-                updateDisplay();
+                // Map to your actual column positions: A=0, J=9
+                parsedData = parsed.data.map((row, index) => {
+                    if (index < 3) {
+                        console.log(`Row ${index}:`, row);
+                        console.log(`Patient ID (col 0):`, row[0], `Appointment Date (col 9):`, row[9]);
+                    }
+                    return {
+                        INTERNALID: row[0],      // Column A
+                        APPOINTMENTDATE: row[9]  // Column J
+                    };
+                }).filter(row => {
+                    return row.INTERNALID && row.APPOINTMENTDATE;
+                });
+
+                console.log('Filtered data length:', parsedData.length);
+                console.log('Sample filtered data:', parsedData.slice(0, 3));
+
+                if (parsedData.length > 0) {
+                    processingStatus.textContent = '✅ Data loaded successfully!';
+                    processingStatus.style.color = '#16a34a';
+                    
+                    console.log('Updating data status...');
+                    updateDataStatus();
+                    console.log('Calculating conversions...');
+                    calculateAllConversions();
+                    console.log('Updating display...');
+                    updateDisplay();
+                    console.log('Data processing complete!');
+                    
+                    // Hide processing status after a moment
+                    setTimeout(() => {
+                        uploadStatus.style.display = 'none';
+                    }, 2000);
+                } else {
+                    console.error('No valid data found after filtering');
+                    processingStatus.textContent = '❌ No valid data found';
+                    processingStatus.style.color = '#dc2626';
+                    alert('No valid data found. Please check that your CSV has data in columns A (Patient IDs) and J (Appointment Dates).\n\nMake sure:\n- Column A has patient IDs\n- Column J has appointment dates\n- File is in CSV format');
+                }
+            } catch (error) {
+                console.error('Error processing CSV:', error);
+                processingStatus.textContent = '❌ Processing error';
+                processingStatus.style.color = '#dc2626';
+                alert('Error processing CSV file: ' + error.message);
             }
         }
 
