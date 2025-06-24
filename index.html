@@ -1,19 +1,12 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Upload, Calendar, TrendingUp, Users, BarChart3 } from 'lucide-react';
 
-const ConversionDashboard = () => {
+const ClinicDashboard = () => {
   const [csvData, setCsvData] = useState('');
   const [selectedTouchpoint, setSelectedTouchpoint] = useState('6months');
   const [selectedMonth, setSelectedMonth] = useState('all');
 
-  // Try to load clinic data if available
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.clinicData && !csvData) {
-      setCsvData(window.clinicData);
-    }
-  }, []);
-
-  // Define touchpoints with their lookback periods (in days)
+  // Define touchpoints
   const touchpoints = {
     '2weeks': { name: '2 Week Follow-up', lookback: 14 },
     '6weeks': { name: '6 Week Follow-up', lookback: 42 },
@@ -23,6 +16,13 @@ const ConversionDashboard = () => {
     '12months': { name: '12 Month Follow-up', lookback: 365 }
   };
 
+  // Load clinic data automatically
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && window.clinicData && !csvData) {
+      setCsvData(window.clinicData);
+    }
+  }, []);
+
   // Parse CSV data
   const parsedData = useMemo(() => {
     if (!csvData) return [];
@@ -31,19 +31,17 @@ const ConversionDashboard = () => {
     if (lines.length < 2) return [];
     
     const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-    const data = lines.slice(1).map(line => {
+    return lines.slice(1).map(line => {
       const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
       const row = {};
       headers.forEach((header, index) => {
         row[header] = values[index] || '';
       });
       return row;
-    });
-    
-    return data;
+    }).filter(row => row.INTERNALID && row.APPOINTMENTDATE);
   }, [csvData]);
 
-  // Core conversion calculation logic
+  // Calculate conversions
   const calculateConversions = useMemo(() => {
     if (!parsedData.length) return {};
     
@@ -53,38 +51,30 @@ const ConversionDashboard = () => {
       const touchpoint = touchpoints[touchpointKey];
       const monthlyResults = {};
       
-      // Get all unique appointment dates to loop through
-      const allDates = [...new Set(parsedData.map(row => row.APPOINTMENTDATE).filter(Boolean))];
+      const allDates = [...new Set(parsedData.map(row => row.APPOINTMENTDATE))];
       
       allDates.forEach(todayDate => {
-        if (!todayDate) return;
-        
         try {
           const today = new Date(todayDate);
           if (isNaN(today.getTime())) return;
           
-          // Calculate reference date (go back X time)
           const referenceDate = new Date(today);
           referenceDate.setDate(referenceDate.getDate() - touchpoint.lookback);
           
-          // Find patients who had appointment exactly on reference date
           const eligiblePatients = parsedData.filter(row => {
             const appointmentDate = new Date(row.APPOINTMENTDATE);
             return appointmentDate.toDateString() === referenceDate.toDateString();
           });
           
-          // Remove patients who already rebooked between reference date and today
           const patientsNeedingReminder = eligiblePatients.filter(patient => {
             const patientId = patient.INTERNALID;
-            const hasRebookedAlready = parsedData.some(row => {
+            return !parsedData.some(row => {
               if (row.INTERNALID !== patientId) return false;
               const apptDate = new Date(row.APPOINTMENTDATE);
               return apptDate > referenceDate && apptDate < today;
             });
-            return !hasRebookedAlready;
           });
           
-          // Check for conversions (appointments within 30 days after today)
           const conversions = patientsNeedingReminder.filter(patient => {
             const patientId = patient.INTERNALID;
             const conversionWindowEnd = new Date(today);
@@ -97,26 +87,20 @@ const ConversionDashboard = () => {
             });
           });
           
-          // Group by month
           const monthKey = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}`;
           
           if (!monthlyResults[monthKey]) {
-            monthlyResults[monthKey] = {
-              remindersSent: 0,
-              conversions: 0,
-              month: monthKey
-            };
+            monthlyResults[monthKey] = { remindersSent: 0, conversions: 0, month: monthKey };
           }
           
           monthlyResults[monthKey].remindersSent += patientsNeedingReminder.length;
           monthlyResults[monthKey].conversions += conversions.length;
           
         } catch (error) {
-          console.error('Error processing date:', todayDate, error);
+          console.error('Error processing date:', todayDate);
         }
       });
       
-      // Calculate conversion rates
       Object.keys(monthlyResults).forEach(month => {
         const result = monthlyResults[month];
         result.conversionRate = result.remindersSent > 0 
@@ -128,11 +112,10 @@ const ConversionDashboard = () => {
     });
     
     return results;
-  }, [parsedData]);
+  }, [parsedData, touchpoints]);
 
   const currentResults = calculateConversions[selectedTouchpoint] || [];
   
-  // Get available months for filtering
   const availableMonths = useMemo(() => {
     const months = new Set();
     Object.values(calculateConversions).forEach(touchpointData => {
@@ -141,7 +124,6 @@ const ConversionDashboard = () => {
     return Array.from(months).sort();
   }, [calculateConversions]);
 
-  // Filter results by selected month
   const filteredResults = useMemo(() => {
     if (selectedMonth === 'all') return currentResults;
     return currentResults.filter(result => result.month === selectedMonth);
@@ -151,9 +133,7 @@ const ConversionDashboard = () => {
     const file = event.target.files[0];
     if (file && file.type === 'text/csv') {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setCsvData(e.target.result);
-      };
+      reader.onload = (e) => setCsvData(e.target.result);
       reader.readAsText(file);
     }
   };
@@ -169,25 +149,15 @@ const ConversionDashboard = () => {
         <p className="text-gray-600">Track conversion rates for SMS follow-up touchpoints across your patient journey</p>
       </div>
 
-      {/* File Upload Section */}
+      {/* Data Status */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
           <Upload className="w-5 h-5 text-blue-600" />
-          <h2 className="text-xl font-semibold">Data Upload</h2>
+          <h2 className="text-xl font-semibold">Data Status</h2>
         </div>
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
-          <input
-            type="file"
-            accept=".csv"
-            onChange={handleFileUpload}
-            className="w-full"
-          />
-          <p className="text-sm text-gray-500 mt-2">
-            Upload your CSV file with INTERNALID and APPOINTMENTDATE columns
-          </p>
-        </div>
+        
         {parsedData.length > 0 ? (
-          <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded">
+          <div className="p-4 bg-green-50 border border-green-200 rounded">
             <div className="flex items-center gap-2 text-green-800 mb-2">
               <span className="text-lg">✅</span>
               <span className="font-semibold">Clinic Data Loaded Successfully</span>
@@ -196,12 +166,12 @@ const ConversionDashboard = () => {
               <div>
                 <span className="text-green-600">Total Appointments:</span>
                 <br />
-                <span className="font-bold text-green-900">{parsedData.length}</span>
+                <span className="font-bold text-green-900">{parsedData.length.toLocaleString()}</span>
               </div>
               <div>
                 <span className="text-green-600">Unique Patients:</span>
                 <br />
-                <span className="font-bold text-green-900">{new Set(parsedData.map(r => r.INTERNALID)).size}</span>
+                <span className="font-bold text-green-900">{new Set(parsedData.map(r => r.INTERNALID)).size.toLocaleString()}</span>
               </div>
               <div>
                 <span className="text-green-600">Date Range:</span>
@@ -209,15 +179,16 @@ const ConversionDashboard = () => {
                 <span className="font-bold text-green-900">1 Year Sample</span>
               </div>
               <div>
-                <span className="text-green-600">Repeat Patients:</span>
+                <span className="text-green-600">Return Rate:</span>
                 <br />
                 <span className="font-bold text-green-900">59%</span>
               </div>
             </div>
           </div>
         ) : (
-          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
-            <p className="text-blue-800">Upload your CSV file to see conversion analysis</p>
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+            <input type="file" accept=".csv" onChange={handleFileUpload} className="w-full" />
+            <p className="text-sm text-gray-500 mt-2">Upload CSV with INTERNALID and APPOINTMENTDATE columns</p>
           </div>
         )}
       </div>
@@ -246,7 +217,7 @@ const ConversionDashboard = () => {
         </div>
       </div>
 
-      {/* Month Selection */}
+      {/* Month Filter */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
           <Calendar className="w-5 h-5 text-purple-600" />
@@ -277,13 +248,6 @@ const ConversionDashboard = () => {
             </button>
           ))}
         </div>
-        {selectedMonth !== 'all' && (
-          <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded">
-            <p className="text-purple-800 text-sm">
-              📅 Viewing results for: <strong>{selectedMonth}</strong> ({touchpoints[selectedTouchpoint]?.name})
-            </p>
-          </div>
-        )}
       </div>
 
       {/* Summary Cards */}
@@ -291,10 +255,8 @@ const ConversionDashboard = () => {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">
-                {selectedMonth === 'all' ? 'Total Reminders Sent' : `Reminders Sent (${selectedMonth})`}
-              </p>
-              <p className="text-2xl font-bold text-gray-900">{totalReminders}</p>
+              <p className="text-sm font-medium text-gray-600">Reminders Sent</p>
+              <p className="text-2xl font-bold text-gray-900">{totalReminders.toLocaleString()}</p>
             </div>
             <Users className="w-8 h-8 text-blue-600" />
           </div>
@@ -303,10 +265,8 @@ const ConversionDashboard = () => {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">
-                {selectedMonth === 'all' ? 'Total Conversions' : `Conversions (${selectedMonth})`}
-              </p>
-              <p className="text-2xl font-bold text-gray-900">{totalConversions}</p>
+              <p className="text-sm font-medium text-gray-600">Conversions</p>
+              <p className="text-2xl font-bold text-gray-900">{totalConversions.toLocaleString()}</p>
             </div>
             <TrendingUp className="w-8 h-8 text-green-600" />
           </div>
@@ -315,9 +275,7 @@ const ConversionDashboard = () => {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">
-                {selectedMonth === 'all' ? 'Overall Conversion Rate' : `Conversion Rate (${selectedMonth})`}
-              </p>
+              <p className="text-sm font-medium text-gray-600">Conversion Rate</p>
               <p className="text-2xl font-bold text-gray-900">{overallRate}%</p>
             </div>
             <BarChart3 className="w-8 h-8 text-purple-600" />
@@ -329,9 +287,7 @@ const ConversionDashboard = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-4">
           <BarChart3 className="w-5 h-5 text-blue-600" />
-          <h2 className="text-xl font-semibold">
-            {selectedMonth === 'all' ? 'Monthly Conversion Results' : `Detailed Results - ${selectedMonth}`}
-          </h2>
+          <h2 className="text-xl font-semibold">Conversion Results</h2>
           <span className="text-sm text-gray-500">({touchpoints[selectedTouchpoint]?.name})</span>
         </div>
         
@@ -350,8 +306,8 @@ const ConversionDashboard = () => {
                 {filteredResults.map((result, index) => (
                   <tr key={result.month} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                     <td className="py-3 px-4 text-gray-900">{result.month}</td>
-                    <td className="py-3 px-4 text-right text-gray-900">{result.remindersSent}</td>
-                    <td className="py-3 px-4 text-right text-gray-900">{result.conversions}</td>
+                    <td className="py-3 px-4 text-right text-gray-900">{result.remindersSent.toLocaleString()}</td>
+                    <td className="py-3 px-4 text-right text-gray-900">{result.conversions.toLocaleString()}</td>
                     <td className="py-3 px-4 text-right">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         parseFloat(result.conversionRate) >= 20 
@@ -378,28 +334,26 @@ const ConversionDashboard = () => {
         )}
       </div>
 
-      {/* Implementation Notes */}
+      {/* Insights */}
       <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-semibold text-blue-900 mb-2">Your Data Analysis:</h3>
+        <h3 className="font-semibold text-blue-900 mb-2">Analysis Insights</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-800">
           <div>
-            <h4 className="font-medium mb-1">Implementation Logic:</h4>
+            <h4 className="font-medium mb-1">Conversion Logic:</h4>
             <ul className="space-y-1">
-              <li>• For each date, looks back X days to find patients who had appointments</li>
-              <li>• Excludes patients who already rebooked between the reference date and "today"</li>
-              <li>• Counts remaining patients as "reminders sent"</li>
-              <li>• Tracks conversions within 30 days after the reminder date</li>
-              <li>• Groups results by calendar month for trending analysis</li>
+              <li>• Looks back X days to find eligible patients</li>
+              <li>• Excludes patients who already rebooked</li>
+              <li>• Tracks 30-day conversion window</li>
+              <li>• Groups by calendar month</li>
             </ul>
           </div>
           <div>
-            <h4 className="font-medium mb-1">Your Dataset Insights:</h4>
+            <h4 className="font-medium mb-1">Your Data:</h4>
             <ul className="space-y-1">
-              <li>• <strong>14,105 appointments</strong> across one year</li>
-              <li>• <strong>7,124 unique patients</strong> in your system</li>
-              <li>• <strong>59% of patients</strong> return for follow-ups</li>
-              <li>• <strong>309 unique appointment dates</strong></li>
-              <li>• Perfect for analyzing follow-up conversion patterns</li>
+              <li>• <strong>14,105 appointments</strong> processed</li>
+              <li>• <strong>7,124 unique patients</strong></li>
+              <li>• <strong>59% return rate</strong></li>
+              <li>• Perfect for conversion analysis</li>
             </ul>
           </div>
         </div>
@@ -408,4 +362,4 @@ const ConversionDashboard = () => {
   );
 };
 
-export default ConversionDashboard;
+export default ClinicDashboard;
