@@ -594,49 +594,105 @@
 
         // Calculate conversions for all touchpoints
         function calculateAllConversions() {
-            console.log('Calculating conversions...');
+            console.log('=== STARTING CONVERSION CALCULATION ===');
+            console.log('Total parsed data:', parsedData.length);
+            
+            // Check date formats first
+            console.log('Sample appointment dates:');
+            parsedData.slice(0, 5).forEach((row, i) => {
+                console.log(`${i}: "${row.APPOINTMENTDATE}" -> parsed: ${new Date(row.APPOINTMENTDATE)}`);
+            });
+            
             conversionResults = {};
 
             Object.keys(touchpoints).forEach(touchpointKey => {
+                console.log(`\n--- Processing ${touchpointKey} (${touchpoints[touchpointKey].lookback} days back) ---`);
+                
                 const touchpoint = touchpoints[touchpointKey];
                 const monthlyResults = {};
 
                 const allDates = [...new Set(parsedData.map(row => row.APPOINTMENTDATE))];
+                console.log(`Unique appointment dates: ${allDates.length}`);
+                console.log('First few dates:', allDates.slice(0, 5));
 
-                allDates.forEach(todayDate => {
+                let processedDates = 0;
+                let totalEligibleFound = 0;
+                let totalRemindersNeeded = 0;
+                let totalConversions = 0;
+
+                allDates.forEach((todayDate, index) => {
                     try {
                         const today = new Date(todayDate);
-                        if (isNaN(today.getTime())) return;
+                        if (isNaN(today.getTime())) {
+                            console.warn(`Invalid date: "${todayDate}"`);
+                            return;
+                        }
 
                         const referenceDate = new Date(today);
                         referenceDate.setDate(referenceDate.getDate() - touchpoint.lookback);
 
+                        // Debug first few iterations
+                        if (index < 3) {
+                            console.log(`\nIteration ${index}:`);
+                            console.log(`Today: ${today.toDateString()}`);
+                            console.log(`Reference date (${touchpoint.lookback} days back): ${referenceDate.toDateString()}`);
+                        }
+
+                        // Find patients who had appointment exactly on reference date
                         const eligiblePatients = parsedData.filter(row => {
                             const appointmentDate = new Date(row.APPOINTMENTDATE);
-                            return appointmentDate.toDateString() === referenceDate.toDateString();
+                            const matches = appointmentDate.toDateString() === referenceDate.toDateString();
+                            return matches;
                         });
 
+                        if (index < 3) {
+                            console.log(`Patients with appointments on ${referenceDate.toDateString()}: ${eligiblePatients.length}`);
+                        }
+
+                        totalEligibleFound += eligiblePatients.length;
+
+                        // Remove patients who already rebooked between reference date and today
                         const patientsNeedingReminder = eligiblePatients.filter(patient => {
                             const patientId = patient.INTERNALID;
-                            return !parsedData.some(row => {
+                            const hasRebookedAlready = parsedData.some(row => {
                                 if (row.INTERNALID !== patientId) return false;
                                 const apptDate = new Date(row.APPOINTMENTDATE);
                                 return apptDate > referenceDate && apptDate < today;
                             });
+                            return !hasRebookedAlready;
                         });
 
+                        if (index < 3) {
+                            console.log(`Patients needing reminder: ${patientsNeedingReminder.length}`);
+                        }
+
+                        totalRemindersNeeded += patientsNeedingReminder.length;
+
+                        // Check for conversions (appointments within 30 days after today)
                         const conversions = patientsNeedingReminder.filter(patient => {
                             const patientId = patient.INTERNALID;
                             const conversionWindowEnd = new Date(today);
                             conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
 
-                            return parsedData.some(row => {
+                            const hasConversion = parsedData.some(row => {
                                 if (row.INTERNALID !== patientId) return false;
                                 const apptDate = new Date(row.APPOINTMENTDATE);
                                 return apptDate > today && apptDate <= conversionWindowEnd;
                             });
+
+                            return hasConversion;
                         });
 
+                        if (index < 3) {
+                            console.log(`Conversions found: ${conversions.length}`);
+                            const conversionWindowEnd = new Date(today);
+                            conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
+                            console.log(`Conversion window: ${today.toDateString()} to ${conversionWindowEnd.toDateString()}`);
+                        }
+
+                        totalConversions += conversions.length;
+
+                        // Group by month
                         const monthKey = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}`;
 
                         if (!monthlyResults[monthKey]) {
@@ -646,11 +702,20 @@
                         monthlyResults[monthKey].remindersSent += patientsNeedingReminder.length;
                         monthlyResults[monthKey].conversions += conversions.length;
 
+                        processedDates++;
+
                     } catch (error) {
-                        // Skip invalid dates
+                        console.error(`Error processing date "${todayDate}":`, error);
                     }
                 });
 
+                console.log(`\n${touchpointKey} Summary:`);
+                console.log(`- Processed dates: ${processedDates}`);
+                console.log(`- Total eligible patients found: ${totalEligibleFound}`);
+                console.log(`- Total reminders needed: ${totalRemindersNeeded}`);
+                console.log(`- Total conversions: ${totalConversions}`);
+
+                // Calculate conversion rates
                 Object.keys(monthlyResults).forEach(month => {
                     const result = monthlyResults[month];
                     result.conversionRate = result.remindersSent > 0 
@@ -659,8 +724,11 @@
                 });
 
                 conversionResults[touchpointKey] = Object.values(monthlyResults).sort((a, b) => a.month.localeCompare(b.month));
+                
+                console.log(`Monthly results for ${touchpointKey}:`, Object.keys(monthlyResults).length, 'months');
             });
 
+            console.log('=== CONVERSION CALCULATION COMPLETE ===');
             updateMonthButtons();
         }
 
