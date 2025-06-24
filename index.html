@@ -455,6 +455,23 @@
             '12months': { name: '12 Month Follow-up', lookback: 365 }
         };
 
+        // Parse DD/MM/YYYY date format correctly
+        function parseAustralianDate(dateString) {
+            if (!dateString) return null;
+            
+            // Handle "01/05/2025 00:00:00" format
+            const cleanDate = dateString.split(' ')[0]; // Remove time part
+            const parts = cleanDate.split('/');
+            
+            if (parts.length !== 3) return null;
+            
+            const day = parseInt(parts[0], 10);
+            const month = parseInt(parts[1], 10) - 1; // JavaScript months are 0-based
+            const year = parseInt(parts[2], 10);
+            
+            return new Date(year, month, day);
+        }
+
         // Simple CSV parser
         function parseCSV(csvText) {
             console.log('Parsing CSV data...');
@@ -511,7 +528,12 @@
                 for (let appt = 0; appt < numAppointments; appt++) {
                     const randomTime = startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime());
                     const randomDate = new Date(randomTime);
-                    const dateStr = randomDate.toLocaleDateString('en-AU') + ' 00:00:00';
+                    
+                    // Format as DD/MM/YYYY to match your data
+                    const day = randomDate.getDate().toString().padStart(2, '0');
+                    const month = (randomDate.getMonth() + 1).toString().padStart(2, '0');
+                    const year = randomDate.getFullYear();
+                    const dateStr = `${day}/${month}/${year} 00:00:00`;
                     
                     // Create row with data in positions A=0 and J=9
                     const row = new Array(14).fill('');
@@ -523,6 +545,7 @@
             }
             
             console.log('Generated sample data:', sampleData.length, 'appointments');
+            console.log('Sample date format:', sampleData[0][9]);
             return { data: sampleData, errors: [] };
         }
 
@@ -581,9 +604,17 @@
             const returnPatients = Object.values(patientCounts).filter(count => count > 1).length;
             const returnRate = Math.round((returnPatients / uniquePatients) * 100);
 
-            // Get date range
-            const dates = parsedData.map(r => new Date(r.APPOINTMENTDATE)).sort((a, b) => a - b);
-            const dateRange = `${dates[0].getFullYear()} - ${dates[dates.length - 1].getFullYear()}`;
+            // Get date range using Australian date parsing
+            const dates = parsedData.map(r => parseAustralianDate(r.APPOINTMENTDATE))
+                                   .filter(date => date !== null)
+                                   .sort((a, b) => a - b);
+            
+            let dateRange = '-';
+            if (dates.length > 0) {
+                const startYear = dates[0].getFullYear();
+                const endYear = dates[dates.length - 1].getFullYear();
+                dateRange = startYear === endYear ? `${startYear}` : `${startYear} - ${endYear}`;
+            }
 
             document.getElementById('totalAppointments').textContent = parsedData.length.toLocaleString();
             document.getElementById('uniquePatients').textContent = uniquePatients.toLocaleString();
@@ -598,9 +629,11 @@
             console.log('Total parsed data:', parsedData.length);
             
             // Check date formats first
-            console.log('Sample appointment dates:');
+            console.log('Sample appointment dates (DD/MM/YYYY format):');
             parsedData.slice(0, 5).forEach((row, i) => {
-                console.log(`${i}: "${row.APPOINTMENTDATE}" -> parsed: ${new Date(row.APPOINTMENTDATE)}`);
+                const originalDate = row.APPOINTMENTDATE;
+                const parsedDate = parseAustralianDate(originalDate);
+                console.log(`${i}: "${originalDate}" -> parsed: ${parsedDate ? parsedDate.toDateString() : 'Invalid'}`);
             });
             
             conversionResults = {};
@@ -622,8 +655,8 @@
 
                 allDates.forEach((todayDate, index) => {
                     try {
-                        const today = new Date(todayDate);
-                        if (isNaN(today.getTime())) {
+                        const today = parseAustralianDate(todayDate);
+                        if (!today || isNaN(today.getTime())) {
                             console.warn(`Invalid date: "${todayDate}"`);
                             return;
                         }
@@ -640,7 +673,8 @@
 
                         // Find patients who had appointment exactly on reference date
                         const eligiblePatients = parsedData.filter(row => {
-                            const appointmentDate = new Date(row.APPOINTMENTDATE);
+                            const appointmentDate = parseAustralianDate(row.APPOINTMENTDATE);
+                            if (!appointmentDate) return false;
                             const matches = appointmentDate.toDateString() === referenceDate.toDateString();
                             return matches;
                         });
@@ -656,7 +690,8 @@
                             const patientId = patient.INTERNALID;
                             const hasRebookedAlready = parsedData.some(row => {
                                 if (row.INTERNALID !== patientId) return false;
-                                const apptDate = new Date(row.APPOINTMENTDATE);
+                                const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
+                                if (!apptDate) return false;
                                 return apptDate > referenceDate && apptDate < today;
                             });
                             return !hasRebookedAlready;
@@ -676,7 +711,8 @@
 
                             const hasConversion = parsedData.some(row => {
                                 if (row.INTERNALID !== patientId) return false;
-                                const apptDate = new Date(row.APPOINTMENTDATE);
+                                const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
+                                if (!apptDate) return false;
                                 return apptDate > today && apptDate <= conversionWindowEnd;
                             });
 
