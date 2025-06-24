@@ -703,7 +703,7 @@
                 let totalConversions = 0;
                 
                 let currentDateIndex = 0;
-                const chunkSize = 50; // Process 50 dates at a time
+                const chunkSize = parsedData.length > 20000 ? 100 : 50; // Larger chunks for big datasets
                 
                 // Process dates in chunks
                 function processDateChunk() {
