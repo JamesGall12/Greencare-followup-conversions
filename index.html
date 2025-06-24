@@ -485,17 +485,17 @@
         let targets = JSON.parse(localStorage.getItem('conversionTargets') || '{}');
         let charts = {};
         
-        // Touchpoint definitions
+        // Touchpoint definitions - days to look back from "today"
         const touchpoints = {
-            '2 Weeks': { baseField: 'FIRSTAPPOINTMENT', days: 14 },
-            '6 Weeks': { baseField: 'FIRSTAPPOINTMENT', days: 42 },
-            '3 Months': { baseField: 'LASTAPPOINTMENT', days: 90 },
-            '5 Months': { baseField: 'LASTAPPOINTMENT', days: 150 },
-            'Script Expiry (6M)': { baseField: 'LASTAPPOINTMENT', days: 175 },
-            '8 Months': { baseField: 'LASTAPPOINTMENT', days: 240 },
-            '12 Months': { baseField: 'LASTAPPOINTMENT', days: 365 },
-            '18 Months': { baseField: 'LASTAPPOINTMENT', days: 545 },
-            '24 Months': { baseField: 'LASTAPPOINTMENT', days: 730 }
+            '2 Weeks': { days: 14 },
+            '6 Weeks': { days: 42 },
+            '3 Months': { days: 90 },
+            '5 Months': { days: 150 },
+            'Script Expiry (6M)': { days: 175 },
+            '8 Months': { days: 240 },
+            '12 Months': { days: 365 },
+            '18 Months': { days: 545 },
+            '24 Months': { days: 730 }
         };
 
         // Utility functions
@@ -708,7 +708,7 @@
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
                 
-                const response = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vR0aMS5opoqMJG2BGhIy5Wet_7v6CtiWRbIrUsV3zMzNTnKasJnKsD7ooMd_u9bi7eDAIbYN5_ysXYl/pub?output=csv', {
+                const response = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vR0aMS5opoqMJG2BGhIy5Wet_7v6CtiWRbIrUsV3zMzNTnKasJnKsD7ooMd_u9bi7eDAIbYN5_ysXYl/pub?output=csv&gid=1705675423', {
                     signal: controller.signal
                 });
                 
@@ -765,7 +765,7 @@
             });
         }
 
-        // Follow the exact step-by-step analysis logic
+        // Follow the NEW backwards-looking logic
         function processData() {
             const selectedMonth = document.getElementById('monthFilter').value;
             
@@ -781,166 +781,150 @@
                 processedData.conversions[tp] = { sent: 0, converted: 0, rate: 0 };
             });
 
-            showDebug(`=== STEP-BY-STEP ANALYSIS ===`);
+            showDebug(`=== NEW BACKWARDS-LOOKING ANALYSIS ===`);
             showDebug(`Processing ${rawData.length} appointment records...`);
             showDebug(`Selected month filter: ${selectedMonth || 'All months'}`);
 
-            // STEP 1: Group appointments by patient and get their first/last appointment dates from the data
-            const patientData = {};
-            
-            rawData.forEach(row => {
-                const patientId = row.INTERNALID;
-                const appointmentDate = parseDate(row.APPOINTMENTDATE);
-                const firstAppointmentDate = parseDate(row.FIRSTAPPOINTMENT);
-                const lastAppointmentDate = parseDate(row.LASTAPPOINTMENT);
-                
-                if (!patientId || !appointmentDate) return;
-                
-                if (!patientData[patientId]) {
-                    patientData[patientId] = {
-                        appointments: [],
-                        firstAppointment: firstAppointmentDate,
-                        lastAppointment: lastAppointmentDate
-                    };
-                }
-                
-                // Add appointment to the list
-                patientData[patientId].appointments.push({
-                    date: appointmentDate,
-                    type: row.APPOINTMENTTYPE,
-                    bookedBy: row.BOOKEDBY || 'Online'
-                });
-                
-                // Update first/last dates if we have them from the data
-                if (firstAppointmentDate && (!patientData[patientId].firstAppointment || firstAppointmentDate < patientData[patientId].firstAppointment)) {
-                    patientData[patientId].firstAppointment = firstAppointmentDate;
-                }
-                if (lastAppointmentDate && (!patientData[patientId].lastAppointment || lastAppointmentDate > patientData[patientId].lastAppointment)) {
-                    patientData[patientId].lastAppointment = lastAppointmentDate;
-                }
-            });
+            // STEP 1: Get all unique appointment dates to loop through as "today"
+            const allAppointmentDates = [...new Set(rawData.map(row => row.APPOINTMENTDATE))]
+                .map(dateStr => parseDate(dateStr))
+                .filter(date => date !== null)
+                .sort((a, b) => a - b);
 
-            showDebug(`STEP 1: Found ${Object.keys(patientData).length} unique patients`);
+            showDebug(`STEP 1: Found ${allAppointmentDates.length} unique appointment dates to process`);
 
-            let processedPatients = 0;
+            let processedDates = 0;
             let totalRemindersInMonth = 0;
-            
-            // Process each patient
-            Object.entries(patientData).forEach(([patientId, data]) => {
-                processedPatients++;
+
+            // STEP 2: Loop through each appointment date as "today's date"
+            allAppointmentDates.forEach(todayDate => {
+                processedDates++;
                 
-                if (processedPatients % 1000 === 0) {
-                    updateProgress(70 + (processedPatients / Object.keys(patientData).length) * 20, 
-                        `Processing patient ${processedPatients}...`);
+                if (processedDates % 50 === 0) {
+                    updateProgress(70 + (processedDates / allAppointmentDates.length) * 20, 
+                        `Processing date ${processedDates}/${allAppointmentDates.length}...`);
                 }
 
-                // STEP 2: Sort appointments chronologically (oldest to newest)
-                data.appointments.sort((a, b) => a.date - b.date);
-                
-                // STEP 3: Use the FIRSTAPPOINTMENT and LASTAPPOINTMENT from data (columns M & N)
-                const firstAppointmentDate = data.firstAppointment;
-                const lastAppointmentDate = data.lastAppointment;
-                
-                if (!firstAppointmentDate || !lastAppointmentDate) {
-                    if (processedPatients <= 2) {
-                        showDebug(`❌ PATIENT ${patientId}: Missing first/last appointment dates`);
-                    }
+                const todayStr = todayDate.toISOString().split('T')[0];
+                const todayMonth = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}`;
+
+                // Skip if not in selected month
+                if (selectedMonth && selectedMonth !== todayMonth) {
                     return;
                 }
 
-                // Debug first few patients
-                if (processedPatients <= 2) {
-                    showDebug(`=== PATIENT ${patientId} ===`);
-                    showDebug(`STEP 2: ${data.appointments.length} appointments (sorted):`);
-                    data.appointments.forEach((appt, idx) => {
-                        showDebug(`  ${idx + 1}. ${appt.date.toISOString().split('T')[0]} (${appt.type})`);
-                    });
-                    showDebug(`STEP 3: First = ${firstAppointmentDate.toISOString().split('T')[0]}, Last = ${lastAppointmentDate.toISOString().split('T')[0]}`);
+                // Debug first few dates
+                if (processedDates <= 2) {
+                    showDebug(`\n=== PROCESSING "TODAY" = ${todayStr} ===`);
                 }
 
-                // STEP 4-7: Check each touchpoint
+                // STEP 3: For each touchpoint, go back X time to find reference date
                 Object.entries(touchpoints).forEach(([touchpointName, config]) => {
-                    // STEP 4: Calculate touchpoint date based on first or last appointment FROM THE DATA
-                    const baseDate = config.baseField === 'FIRSTAPPOINTMENT' ? 
-                        firstAppointmentDate : lastAppointmentDate;
-                    
-                    const reminderDate = new Date(baseDate);
-                    reminderDate.setDate(reminderDate.getDate() + config.days);
-                    
-                    const reminderMonth = `${reminderDate.getFullYear()}-${String(reminderDate.getMonth() + 1).padStart(2, '0')}`;
-                    
-                    // Debug first patient's touchpoint calculations
-                    if (processedPatients === 1) {
-                        showDebug(`STEP 4: ${touchpointName} calculation:`);
-                        showDebug(`  Base (${config.baseField}): ${baseDate.toISOString().split('T')[0]}`);
-                        showDebug(`  + ${config.days} days = ${reminderDate.toISOString().split('T')[0]}`);
-                        showDebug(`  Reminder month: ${reminderMonth}`);
-                    }
-                    
-                    // STEP 5: Check if touchpoint falls in selected month
-                    if (selectedMonth && selectedMonth !== reminderMonth) {
-                        if (processedPatients === 1) {
-                            showDebug(`  ❌ SKIP: Not in selected month ${selectedMonth}`);
-                        }
-                        return;
-                    }
-                    
-                    // Additional filters (18 months ago, not in future)
-                    const now = new Date();
-                    const eighteenMonthsAgo = new Date();
-                    eighteenMonthsAgo.setMonth(eighteenMonthsAgo.getMonth() - 18);
-                    
-                    if (reminderDate < eighteenMonthsAgo || reminderDate > now) {
-                        if (processedPatients === 1) {
-                            showDebug(`  ❌ SKIP: Outside valid date range`);
-                        }
-                        return;
+                    const referenceDate = new Date(todayDate);
+                    referenceDate.setDate(referenceDate.getDate() - config.days);
+                    const referenceDateStr = referenceDate.toISOString().split('T')[0];
+
+                    if (processedDates <= 2) {
+                        showDebug(`\n${touchpointName}: Looking back ${config.days} days from ${todayStr} to ${referenceDateStr}`);
                     }
 
-                    // STEP 6: Count reminder sent
-                    processedData.conversions[touchpointName].sent++;
-                    totalRemindersInMonth++;
-                    
-                    if (processedPatients === 1) {
-                        showDebug(`  ✅ STEP 6: REMINDER SENT counted for ${touchpointName}`);
-                    }
-                    
-                    // STEP 7: Check for booking within 0-30 days after reminder
-                    const conversionWindowEnd = new Date(reminderDate);
-                    conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
-                    
-                    if (processedPatients === 1) {
-                        showDebug(`  STEP 7: Conversion window = ${reminderDate.toISOString().split('T')[0]} to ${conversionWindowEnd.toISOString().split('T')[0]}`);
-                    }
-                    
-                    // Look for any appointment within the 0-30 day window
-                    const conversion = data.appointments.find(appointment => {
-                        const inWindow = appointment.date >= reminderDate && appointment.date <= conversionWindowEnd;
-                        if (processedPatients === 1) {
-                            showDebug(`    ${appointment.date.toISOString().split('T')[0]} ${inWindow ? '✅ IN WINDOW' : '❌ outside'}`);
-                        }
-                        return inWindow;
+                    // STEP 4: Find all patients who had an appointment exactly on that reference date
+                    const patientsOnReferenceDate = rawData.filter(row => {
+                        const appointmentDate = parseDate(row.APPOINTMENTDATE);
+                        return appointmentDate && 
+                               appointmentDate.getTime() === referenceDate.getTime() &&
+                               row.INTERNALID;
                     });
-                    
-                    if (conversion) {
-                        processedData.conversions[touchpointName].converted++;
+
+                    if (processedDates <= 2) {
+                        showDebug(`  Found ${patientsOnReferenceDate.length} patients with appointments on ${referenceDateStr}`);
+                    }
+
+                    // STEP 5: Eliminate patients who already rebooked between reference date and today
+                    const eligiblePatients = patientsOnReferenceDate.filter(refPatient => {
+                        const patientId = refPatient.INTERNALID;
                         
-                        if (processedPatients === 1) {
-                            showDebug(`  ✅ CONVERSION FOUND: ${conversion.date.toISOString().split('T')[0]} (${conversion.type})`);
+                        // Check if this patient has any appointments between reference date and today (exclusive of both)
+                        const hasRebookedInBetween = rawData.some(row => {
+                            if (row.INTERNALID !== patientId) return false;
+                            
+                            const appointmentDate = parseDate(row.APPOINTMENTDATE);
+                            if (!appointmentDate) return false;
+                            
+                            // Check if appointment is after reference date but before today
+                            return appointmentDate > referenceDate && appointmentDate < todayDate;
+                        });
+
+                        return !hasRebookedInBetween;
+                    });
+
+                    if (processedDates <= 2) {
+                        showDebug(`  After eliminating rebookers: ${eligiblePatients.length} patients eligible for reminders`);
+                        if (patientsOnReferenceDate.length > eligiblePatients.length) {
+                            showDebug(`  Filtered out ${patientsOnReferenceDate.length - eligiblePatients.length} patients who rebooked between ${referenceDateStr} and ${todayStr}`);
                         }
+                    }
+
+                    // STEP 6: Count as "Reminders Sent" for this touchpoint on this day
+                    const remindersSent = eligiblePatients.length;
+                    processedData.conversions[touchpointName].sent += remindersSent;
+                    totalRemindersInMonth += remindersSent;
+
+                    if (processedDates <= 2 && remindersSent > 0) {
+                        showDebug(`  ✅ STEP 6: ${remindersSent} reminders sent for ${touchpointName} on ${todayStr}`);
+                    }
+
+                    // STEP 7: Check for conversions (appointments within 0-30 days after today)
+                    const conversionWindowEnd = new Date(todayDate);
+                    conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
+
+                    if (processedDates <= 2 && remindersSent > 0) {
+                        showDebug(`  STEP 7: Checking conversions from ${todayStr} to ${conversionWindowEnd.toISOString().split('T')[0]}`);
+                    }
+
+                    let conversions = 0;
+                    eligiblePatients.forEach(patient => {
+                        const patientId = patient.INTERNALID;
                         
-                        // Track by booking source and month
-                        const source = conversion.bookedBy;
-                        processedData.bySource[source] = (processedData.bySource[source] || 0) + 1;
-                        processedData.byMonth[reminderMonth] = (processedData.byMonth[reminderMonth] || 0) + 1;
-                    } else if (processedPatients === 1) {
-                        showDebug(`  ❌ NO CONVERSION for ${touchpointName}`);
+                        // Look for any appointment by this patient within 0-30 days after today
+                        const hasConversion = rawData.some(row => {
+                            if (row.INTERNALID !== patientId) return false;
+                            
+                            const appointmentDate = parseDate(row.APPOINTMENTDATE);
+                            if (!appointmentDate) return false;
+                            
+                            // Check if appointment is within the conversion window (today to today+30)
+                            return appointmentDate >= todayDate && appointmentDate <= conversionWindowEnd;
+                        });
+
+                        if (hasConversion) {
+                            conversions++;
+                            
+                            // Track by booking source and month
+                            const conversionAppointment = rawData.find(row => {
+                                if (row.INTERNALID !== patientId) return false;
+                                const appointmentDate = parseDate(row.APPOINTMENTDATE);
+                                return appointmentDate && appointmentDate >= todayDate && appointmentDate <= conversionWindowEnd;
+                            });
+                            
+                            if (conversionAppointment) {
+                                const source = conversionAppointment.BOOKEDBY || 'Online';
+                                processedData.bySource[source] = (processedData.bySource[source] || 0) + 1;
+                                processedData.byMonth[todayMonth] = (processedData.byMonth[todayMonth] || 0) + 1;
+                            }
+                        }
+                    });
+
+                    processedData.conversions[touchpointName].converted += conversions;
+
+                    if (processedDates <= 2 && (remindersSent > 0 || conversions > 0)) {
+                        showDebug(`  ✅ CONVERSIONS: ${conversions}/${remindersSent} patients converted (${remindersSent > 0 ? (conversions/remindersSent*100).toFixed(1) : 0}%)`);
                     }
                 });
             });
 
             showDebug(`\n=== ANALYSIS COMPLETE ===`);
-            showDebug(`Processed ${processedPatients} patients`);
+            showDebug(`Processed ${processedDates} unique appointment dates`);
             showDebug(`Total reminders in selected period: ${totalRemindersInMonth}`);
 
             // Calculate conversion rates
@@ -971,76 +955,53 @@
             }
         }
 
-        // Load sample data for testing - more realistic version
+        // Load sample data for testing - updated for new logic
         function loadSampleData() {
             showLoading();
-            updateProgress(20, 'Generating realistic sample data...');
+            updateProgress(20, 'Generating sample data for backwards-looking logic...');
             
-            // Generate realistic sample data that follows your business logic
+            // Generate sample data that works well with the new backwards logic
             rawData = [];
-            const samplePatients = 200;
+            const samplePatients = 100;
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - 400); // Start 400 days ago
             
             for (let i = 1; i <= samplePatients; i++) {
                 const patientId = `P${i.toString().padStart(3, '0')}`;
                 
-                // Generate initial appointment (first appointment)
-                const initialDate = new Date();
-                initialDate.setDate(initialDate.getDate() - Math.random() * 730); // Up to 2 years ago
+                // Generate 1-3 appointments per patient spread over the time period
+                const numAppointments = 1 + Math.floor(Math.random() * 3);
                 
-                // Add initial appointment
-                rawData.push({
-                    INTERNALID: patientId,
-                    APPOINTMENTDATE: initialDate.toISOString().split('T')[0],
-                    APPOINTMENTTYPE: 'Initial',
-                    FIRSTAPPOINTMENT: initialDate.toISOString().split('T')[0],
-                    LASTAPPOINTMENT: initialDate.toISOString().split('T')[0],
-                    BOOKEDBY: Math.random() > 0.4 ? ['Dr Smith', 'Dr Johnson', 'Nurse Kate'][Math.floor(Math.random() * 3)] : ''
-                });
-                
-                // Generate follow-up appointments with realistic timing
-                let lastApptDate = new Date(initialDate);
-                const numFollowUps = Math.floor(Math.random() * 4); // 0-3 follow-ups
-                
-                for (let j = 0; j < numFollowUps; j++) {
-                    // Follow-ups typically happen every 3-6 months
-                    const daysSinceLastAppt = 90 + Math.random() * 90; // 3-6 months
-                    const followUpDate = new Date(lastApptDate);
-                    followUpDate.setDate(followUpDate.getDate() + daysSinceLastAppt);
+                for (let j = 0; j < numAppointments; j++) {
+                    const appointmentDate = new Date(startDate);
+                    appointmentDate.setDate(appointmentDate.getDate() + Math.random() * 400);
                     
                     // Don't create future appointments
-                    if (followUpDate > new Date()) break;
+                    if (appointmentDate > new Date()) continue;
                     
                     rawData.push({
                         INTERNALID: patientId,
-                        APPOINTMENTDATE: followUpDate.toISOString().split('T')[0],
-                        APPOINTMENTTYPE: 'Follow',
-                        FIRSTAPPOINTMENT: initialDate.toISOString().split('T')[0],
-                        LASTAPPOINTMENT: followUpDate.toISOString().split('T')[0],
-                        BOOKEDBY: Math.random() > 0.4 ? ['Dr Smith', 'Dr Johnson', 'Nurse Kate'][Math.floor(Math.random() * 3)] : ''
+                        APPOINTMENTDATE: appointmentDate.toISOString().split('T')[0],
+                        APPOINTMENTTYPE: j === 0 ? 'Initial' : 'Follow',
+                        BOOKEDBY: Math.random() > 0.3 ? ['Dr Smith', 'Dr Johnson', 'Nurse Kate'][Math.floor(Math.random() * 3)] : ''
                     });
-                    
-                    lastApptDate = followUpDate;
                 }
-                
-                // Update all records for this patient with the actual last appointment date
-                const patientRecords = rawData.filter(r => r.INTERNALID === patientId);
-                const actualLastDate = Math.max(...patientRecords.map(r => new Date(r.APPOINTMENTDATE)));
-                patientRecords.forEach(record => {
-                    record.LASTAPPOINTMENT = new Date(actualLastDate).toISOString().split('T')[0];
-                });
             }
             
-            updateProgress(50, 'Processing sample data with real business logic...');
+            // Sort by appointment date (most recent first, as per your data)
+            rawData.sort((a, b) => new Date(b.APPOINTMENTDATE) - new Date(a.APPOINTMENTDATE));
+            
+            updateProgress(50, 'Processing with backwards-looking logic...');
             showDebug(`Generated ${rawData.length} appointment records for ${samplePatients} patients`);
             
-            // Process with the real logic
+            // Process with the new logic
             processData();
             
             updateProgress(80, 'Rendering dashboard...');
             renderDashboard();
             
-            updateProgress(100, 'Sample data loaded with real calculations!');
-            showAlert('Sample data loaded successfully using your actual business logic. Numbers should now be realistic.', 'info');
+            updateProgress(100, 'Sample data loaded with backwards-looking logic!');
+            showAlert('Sample data loaded successfully using the new backwards-looking approach. This should show realistic conversion numbers.', 'info');
             
             setTimeout(hideLoading, 500);
         }
