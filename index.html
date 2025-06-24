@@ -1,365 +1,679 @@
-import React, { useState, useMemo } from 'react';
-import { Upload, Calendar, TrendingUp, Users, BarChart3 } from 'lucide-react';
-
-const ClinicDashboard = () => {
-  const [csvData, setCsvData] = useState('');
-  const [selectedTouchpoint, setSelectedTouchpoint] = useState('6months');
-  const [selectedMonth, setSelectedMonth] = useState('all');
-
-  // Define touchpoints
-  const touchpoints = {
-    '2weeks': { name: '2 Week Follow-up', lookback: 14 },
-    '6weeks': { name: '6 Week Follow-up', lookback: 42 },
-    '3months': { name: '3 Month Follow-up', lookback: 90 },
-    '5months': { name: '5 Month Follow-up', lookback: 150 },
-    '6months': { name: '6 Month Follow-up', lookback: 180 },
-    '12months': { name: '12 Month Follow-up', lookback: 365 }
-  };
-
-  // Load clinic data automatically
-  React.useEffect(() => {
-    if (typeof window !== 'undefined' && window.clinicData && !csvData) {
-      setCsvData(window.clinicData);
-    }
-  }, []);
-
-  // Parse CSV data
-  const parsedData = useMemo(() => {
-    if (!csvData) return [];
-    
-    const lines = csvData.split('\n').filter(line => line.trim());
-    if (lines.length < 2) return [];
-    
-    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-    return lines.slice(1).map(line => {
-      const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
-      const row = {};
-      headers.forEach((header, index) => {
-        row[header] = values[index] || '';
-      });
-      return row;
-    }).filter(row => row.INTERNALID && row.APPOINTMENTDATE);
-  }, [csvData]);
-
-  // Calculate conversions
-  const calculateConversions = useMemo(() => {
-    if (!parsedData.length) return {};
-    
-    const results = {};
-    
-    Object.keys(touchpoints).forEach(touchpointKey => {
-      const touchpoint = touchpoints[touchpointKey];
-      const monthlyResults = {};
-      
-      const allDates = [...new Set(parsedData.map(row => row.APPOINTMENTDATE))];
-      
-      allDates.forEach(todayDate => {
-        try {
-          const today = new Date(todayDate);
-          if (isNaN(today.getTime())) return;
-          
-          const referenceDate = new Date(today);
-          referenceDate.setDate(referenceDate.getDate() - touchpoint.lookback);
-          
-          const eligiblePatients = parsedData.filter(row => {
-            const appointmentDate = new Date(row.APPOINTMENTDATE);
-            return appointmentDate.toDateString() === referenceDate.toDateString();
-          });
-          
-          const patientsNeedingReminder = eligiblePatients.filter(patient => {
-            const patientId = patient.INTERNALID;
-            return !parsedData.some(row => {
-              if (row.INTERNALID !== patientId) return false;
-              const apptDate = new Date(row.APPOINTMENTDATE);
-              return apptDate > referenceDate && apptDate < today;
-            });
-          });
-          
-          const conversions = patientsNeedingReminder.filter(patient => {
-            const patientId = patient.INTERNALID;
-            const conversionWindowEnd = new Date(today);
-            conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
-            
-            return parsedData.some(row => {
-              if (row.INTERNALID !== patientId) return false;
-              const apptDate = new Date(row.APPOINTMENTDATE);
-              return apptDate > today && apptDate <= conversionWindowEnd;
-            });
-          });
-          
-          const monthKey = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}`;
-          
-          if (!monthlyResults[monthKey]) {
-            monthlyResults[monthKey] = { remindersSent: 0, conversions: 0, month: monthKey };
-          }
-          
-          monthlyResults[monthKey].remindersSent += patientsNeedingReminder.length;
-          monthlyResults[monthKey].conversions += conversions.length;
-          
-        } catch (error) {
-          console.error('Error processing date:', todayDate);
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Follow-Up Conversion Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/papaparse/5.4.1/papaparse.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-      });
-      
-      Object.keys(monthlyResults).forEach(month => {
-        const result = monthlyResults[month];
-        result.conversionRate = result.remindersSent > 0 
-          ? (result.conversions / result.remindersSent * 100).toFixed(1)
-          : '0.0';
-      });
-      
-      results[touchpointKey] = Object.values(monthlyResults).sort((a, b) => a.month.localeCompare(b.month));
-    });
-    
-    return results;
-  }, [parsedData, touchpoints]);
 
-  const currentResults = calculateConversions[selectedTouchpoint] || [];
-  
-  const availableMonths = useMemo(() => {
-    const months = new Set();
-    Object.values(calculateConversions).forEach(touchpointData => {
-      touchpointData.forEach(result => months.add(result.month));
-    });
-    return Array.from(months).sort();
-  }, [calculateConversions]);
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background-color: #f9fafb;
+            color: #111827;
+            line-height: 1.6;
+        }
 
-  const filteredResults = useMemo(() => {
-    if (selectedMonth === 'all') return currentResults;
-    return currentResults.filter(result => result.month === selectedMonth);
-  }, [currentResults, selectedMonth]);
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 24px;
+        }
 
-  const handleFileUpload = (event) => {
-    const file = event.target.files[0];
-    if (file && file.type === 'text/csv') {
-      const reader = new FileReader();
-      reader.onload = (e) => setCsvData(e.target.result);
-      reader.readAsText(file);
-    }
-  };
+        .header {
+            margin-bottom: 32px;
+        }
 
-  const totalReminders = filteredResults.reduce((sum, r) => sum + r.remindersSent, 0);
-  const totalConversions = filteredResults.reduce((sum, r) => sum + r.conversions, 0);
-  const overallRate = totalReminders > 0 ? (totalConversions / totalReminders * 100).toFixed(1) : '0.0';
+        .header h1 {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
 
-  return (
-    <div className="p-6 max-w-7xl mx-auto bg-gray-50 min-h-screen">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Follow-Up Conversion Dashboard</h1>
-        <p className="text-gray-600">Track conversion rates for SMS follow-up touchpoints across your patient journey</p>
-      </div>
+        .header p {
+            color: #6b7280;
+        }
 
-      {/* Data Status */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Upload className="w-5 h-5 text-blue-600" />
-          <h2 className="text-xl font-semibold">Data Status</h2>
-        </div>
-        
-        {parsedData.length > 0 ? (
-          <div className="p-4 bg-green-50 border border-green-200 rounded">
-            <div className="flex items-center gap-2 text-green-800 mb-2">
-              <span className="text-lg">✅</span>
-              <span className="font-semibold">Clinic Data Loaded Successfully</span>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-green-600">Total Appointments:</span>
-                <br />
-                <span className="font-bold text-green-900">{parsedData.length.toLocaleString()}</span>
-              </div>
-              <div>
-                <span className="text-green-600">Unique Patients:</span>
-                <br />
-                <span className="font-bold text-green-900">{new Set(parsedData.map(r => r.INTERNALID)).size.toLocaleString()}</span>
-              </div>
-              <div>
-                <span className="text-green-600">Date Range:</span>
-                <br />
-                <span className="font-bold text-green-900">1 Year Sample</span>
-              </div>
-              <div>
-                <span className="text-green-600">Return Rate:</span>
-                <br />
-                <span className="font-bold text-green-900">59%</span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
-            <input type="file" accept=".csv" onChange={handleFileUpload} className="w-full" />
-            <p className="text-sm text-gray-500 mt-2">Upload CSV with INTERNALID and APPOINTMENTDATE columns</p>
-          </div>
-        )}
-      </div>
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
 
-      {/* Touchpoint Selection */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Calendar className="w-5 h-5 text-blue-600" />
-          <h2 className="text-xl font-semibold">Follow-Up Touchpoint</h2>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {Object.entries(touchpoints).map(([key, touchpoint]) => (
-            <button
-              key={key}
-              onClick={() => setSelectedTouchpoint(key)}
-              className={`p-3 rounded-lg border text-center transition-colors ${
-                selectedTouchpoint === key
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-blue-300'
-              }`}
-            >
-              <div className="font-medium text-sm">{touchpoint.name}</div>
-              <div className="text-xs opacity-75">{touchpoint.lookback} days</div>
-            </button>
-          ))}
-        </div>
-      </div>
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
 
-      {/* Month Filter */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Calendar className="w-5 h-5 text-purple-600" />
-          <h2 className="text-xl font-semibold">Month Filter</h2>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => setSelectedMonth('all')}
-            className={`px-4 py-2 rounded-lg border transition-colors ${
-              selectedMonth === 'all'
-                ? 'bg-purple-600 text-white border-purple-600'
-                : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
-            }`}
-          >
-            All Months
-          </button>
-          {availableMonths.map(month => (
-            <button
-              key={month}
-              onClick={() => setSelectedMonth(month)}
-              className={`px-4 py-2 rounded-lg border transition-colors ${
-                selectedMonth === month
-                  ? 'bg-purple-600 text-white border-purple-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
-              }`}
-            >
-              {month}
-            </button>
-          ))}
-        </div>
-      </div>
+        .card-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Reminders Sent</p>
-              <p className="text-2xl font-bold text-gray-900">{totalReminders.toLocaleString()}</p>
-            </div>
-            <Users className="w-8 h-8 text-blue-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Conversions</p>
-              <p className="text-2xl font-bold text-gray-900">{totalConversions.toLocaleString()}</p>
-            </div>
-            <TrendingUp className="w-8 h-8 text-green-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Conversion Rate</p>
-              <p className="text-2xl font-bold text-gray-900">{overallRate}%</p>
-            </div>
-            <BarChart3 className="w-8 h-8 text-purple-600" />
-          </div>
-        </div>
-      </div>
+        .icon {
+            width: 20px;
+            height: 20px;
+            color: #2563eb;
+        }
 
-      {/* Results Table */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <BarChart3 className="w-5 h-5 text-blue-600" />
-          <h2 className="text-xl font-semibold">Conversion Results</h2>
-          <span className="text-sm text-gray-500">({touchpoints[selectedTouchpoint]?.name})</span>
-        </div>
-        
-        {filteredResults.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-900">Month</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-900">Reminders Sent</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-900">Conversions</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-900">Conversion Rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredResults.map((result, index) => (
-                  <tr key={result.month} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                    <td className="py-3 px-4 text-gray-900">{result.month}</td>
-                    <td className="py-3 px-4 text-right text-gray-900">{result.remindersSent.toLocaleString()}</td>
-                    <td className="py-3 px-4 text-right text-gray-900">{result.conversions.toLocaleString()}</td>
-                    <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        parseFloat(result.conversionRate) >= 20 
-                          ? 'bg-green-100 text-green-800'
-                          : parseFloat(result.conversionRate) >= 10
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {result.conversionRate}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-center py-8 text-gray-500">
-            {parsedData.length === 0 
-              ? 'Upload your CSV data to see conversion results'
-              : 'No data available for the selected touchpoint'
+        .file-upload {
+            border: 2px dashed #d1d5db;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .file-upload input {
+            margin-bottom: 8px;
+        }
+
+        .status-success {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 16px;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-top: 12px;
+        }
+
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+        }
+
+        .button {
+            padding: 12px 16px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+
+        .button:hover {
+            border-color: #3b82f6;
+        }
+
+        .button.active {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+
+        .button.purple {
+            background: #7c3aed;
+            color: white;
+            border-color: #7c3aed;
+        }
+
+        .button.purple:not(.active) {
+            background: white;
+            color: #374151;
+        }
+
+        .button.purple:not(.active):hover {
+            border-color: #7c3aed;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .summary-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
+            padding: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .summary-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-top: 4px;
+        }
+
+        .summary-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #6b7280;
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        th {
+            font-weight: 600;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .conversion-rate {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .rate-high { background: #dcfce7; color: #166534; }
+        .rate-medium { background: #fef3c7; color: #92400e; }
+        .rate-low { background: #fee2e2; color: #991b1b; }
+
+        .zebra:nth-child(even) {
+            background: #f9fafb;
+        }
+
+        .insights {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 24px;
+        }
+
+        .insights-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-top: 12px;
+        }
+
+        @media (max-width: 768px) {
+            .button-grid {
+                grid-template-columns: repeat(2, 1fr);
             }
-          </div>
-        )}
-      </div>
+            .insights-grid {
+                grid-template-columns: 1fr;
+            }
+        }
 
-      {/* Insights */}
-      <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-semibold text-blue-900 mb-2">Analysis Insights</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-800">
-          <div>
-            <h4 className="font-medium mb-1">Conversion Logic:</h4>
-            <ul className="space-y-1">
-              <li>• Looks back X days to find eligible patients</li>
-              <li>• Excludes patients who already rebooked</li>
-              <li>• Tracks 30-day conversion window</li>
-              <li>• Groups by calendar month</li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="font-medium mb-1">Your Data:</h4>
-            <ul className="space-y-1">
-              <li>• <strong>14,105 appointments</strong> processed</li>
-              <li>• <strong>7,124 unique patients</strong></li>
-              <li>• <strong>59% return rate</strong></li>
-              <li>• Perfect for conversion analysis</li>
-            </ul>
-          </div>
+        .hidden {
+            display: none;
+        }
+
+        .filter-info {
+            background: #f3e8ff;
+            border: 1px solid #c4b5fd;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 12px;
+            font-size: 14px;
+            color: #5b21b6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Follow-Up Conversion Dashboard</h1>
+            <p>Track conversion rates for SMS follow-up touchpoints across your patient journey</p>
         </div>
-      </div>
-    </div>
-  );
-};
 
-export default ClinicDashboard;
+        <!-- Data Upload Section -->
+        <div class="card">
+            <div class="card-header">
+                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                </svg>
+                <h2>Data Upload</h2>
+            </div>
+            <div class="file-upload">
+                <input type="file" id="csvFile" accept=".csv" />
+                <p style="font-size: 14px; color: #6b7280;">Upload your CSV file with INTERNALID and APPOINTMENTDATE columns</p>
+            </div>
+            <div id="dataStatus" class="hidden">
+                <div class="status-success">
+                    <div style="display: flex; align-items: center; gap: 8px; color: #166534; margin-bottom: 8px;">
+                        <span style="font-size: 18px;">✅</span>
+                        <span style="font-weight: 600;">Clinic Data Loaded Successfully</span>
+                    </div>
+                    <div class="status-grid">
+                        <div>
+                            <span style="color: #16a34a; font-size: 14px;">Total Appointments:</span><br>
+                            <span id="totalAppointments" style="font-weight: bold; color: #15803d;">0</span>
+                        </div>
+                        <div>
+                            <span style="color: #16a34a; font-size: 14px;">Unique Patients:</span><br>
+                            <span id="uniquePatients" style="font-weight: bold; color: #15803d;">0</span>
+                        </div>
+                        <div>
+                            <span style="color: #16a34a; font-size: 14px;">Date Range:</span><br>
+                            <span style="font-weight: bold; color: #15803d;">1 Year Sample</span>
+                        </div>
+                        <div>
+                            <span style="color: #16a34a; font-size: 14px;">Return Rate:</span><br>
+                            <span id="returnRate" style="font-weight: bold; color: #15803d;">0%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Touchpoint Selection -->
+        <div class="card">
+            <div class="card-header">
+                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                </svg>
+                <h2>Follow-Up Touchpoint</h2>
+            </div>
+            <div class="button-grid" id="touchpointButtons">
+                <button class="button active" data-touchpoint="2weeks">
+                    <div style="font-weight: 500;">2 Week Follow-up</div>
+                    <div style="font-size: 12px; opacity: 0.7;">14 days</div>
+                </button>
+                <button class="button" data-touchpoint="6weeks">
+                    <div style="font-weight: 500;">6 Week Follow-up</div>
+                    <div style="font-size: 12px; opacity: 0.7;">42 days</div>
+                </button>
+                <button class="button" data-touchpoint="3months">
+                    <div style="font-weight: 500;">3 Month Follow-up</div>
+                    <div style="font-size: 12px; opacity: 0.7;">90 days</div>
+                </button>
+                <button class="button" data-touchpoint="5months">
+                    <div style="font-weight: 500;">5 Month Follow-up</div>
+                    <div style="font-size: 12px; opacity: 0.7;">150 days</div>
+                </button>
+                <button class="button" data-touchpoint="6months">
+                    <div style="font-weight: 500;">6 Month Follow-up</div>
+                    <div style="font-size: 12px; opacity: 0.7;">180 days</div>
+                </button>
+                <button class="button" data-touchpoint="12months">
+                    <div style="font-weight: 500;">12 Month Follow-up</div>
+                    <div style="font-size: 12px; opacity: 0.7;">365 days</div>
+                </button>
+            </div>
+        </div>
+
+        <!-- Month Filter -->
+        <div class="card">
+            <div class="card-header">
+                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: #7c3aed;">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                </svg>
+                <h2>Month Filter</h2>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 12px;" id="monthButtons">
+                <button class="button purple active" data-month="all">All Months</button>
+            </div>
+            <div id="monthFilterInfo" class="filter-info hidden">
+                📅 Viewing results for: <strong id="selectedMonthText"></strong>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div>
+                    <div class="summary-label">Reminders Sent</div>
+                    <div class="summary-value" id="totalReminders">0</div>
+                </div>
+                <svg style="width: 32px; height: 32px; color: #2563eb;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-.5a6 6 0 01-3 5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                </svg>
+            </div>
+            <div class="summary-card">
+                <div>
+                    <div class="summary-label">Conversions</div>
+                    <div class="summary-value" id="totalConversions">0</div>
+                </div>
+                <svg style="width: 32px; height: 32px; color: #16a34a;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                </svg>
+            </div>
+            <div class="summary-card">
+                <div>
+                    <div class="summary-label">Conversion Rate</div>
+                    <div class="summary-value" id="overallRate">0%</div>
+                </div>
+                <svg style="width: 32px; height: 32px; color: #7c3aed;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+            </div>
+        </div>
+
+        <!-- Results Table -->
+        <div class="card">
+            <div class="card-header">
+                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+                <h2>Conversion Results</h2>
+                <span style="font-size: 14px; color: #6b7280;" id="currentTouchpointLabel">(2 Week Follow-up)</span>
+            </div>
+            
+            <div id="resultsTable">
+                <div style="text-align: center; padding: 32px 0; color: #6b7280;">
+                    Upload your CSV data to see conversion results
+                </div>
+            </div>
+        </div>
+
+        <!-- Insights -->
+        <div class="insights">
+            <h3 style="font-weight: 600; color: #1e40af; margin-bottom: 8px;">Analysis Insights</h3>
+            <div class="insights-grid">
+                <div>
+                    <h4 style="font-weight: 500; margin-bottom: 4px; color: #1e40af;">Conversion Logic:</h4>
+                    <ul style="font-size: 14px; color: #1e40af;">
+                        <li>• Looks back X days to find eligible patients</li>
+                        <li>• Excludes patients who already rebooked</li>
+                        <li>• Tracks 30-day conversion window</li>
+                        <li>• Groups by calendar month</li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 style="font-weight: 500; margin-bottom: 4px; color: #1e40af;">Expected Data:</h4>
+                    <ul style="font-size: 14px; color: #1e40af;">
+                        <li>• <strong>14,105 appointments</strong> to process</li>
+                        <li>• <strong>7,124 unique patients</strong></li>
+                        <li>• <strong>59% return rate</strong></li>
+                        <li>• Perfect for conversion analysis</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Touchpoint definitions
+        const touchpoints = {
+            '2weeks': { name: '2 Week Follow-up', lookback: 14 },
+            '6weeks': { name: '6 Week Follow-up', lookback: 42 },
+            '3months': { name: '3 Month Follow-up', lookback: 90 },
+            '5months': { name: '5 Month Follow-up', lookback: 150 },
+            '6months': { name: '6 Month Follow-up', lookback: 180 },
+            '12months': { name: '12 Month Follow-up', lookback: 365 }
+        };
+
+        // Global variables
+        let parsedData = [];
+        let conversionResults = {};
+        let selectedTouchpoint = '2weeks';
+        let selectedMonth = 'all';
+
+        // File upload handler
+        document.getElementById('csvFile').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file && file.type === 'text/csv') {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    processCsvData(e.target.result);
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        // Process CSV data
+        function processCsvData(csvText) {
+            const parsed = Papa.parse(csvText, {
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true
+            });
+
+            parsedData = parsed.data.filter(row => 
+                row.INTERNALID && row.APPOINTMENTDATE
+            );
+
+            if (parsedData.length > 0) {
+                updateDataStatus();
+                calculateAllConversions();
+                updateDisplay();
+            }
+        }
+
+        // Update data status display
+        function updateDataStatus() {
+            const uniquePatients = new Set(parsedData.map(r => r.INTERNALID)).size;
+            const patientCounts = {};
+            parsedData.forEach(row => {
+                patientCounts[row.INTERNALID] = (patientCounts[row.INTERNALID] || 0) + 1;
+            });
+            const returnPatients = Object.values(patientCounts).filter(count => count > 1).length;
+            const returnRate = Math.round((returnPatients / uniquePatients) * 100);
+
+            document.getElementById('totalAppointments').textContent = parsedData.length.toLocaleString();
+            document.getElementById('uniquePatients').textContent = uniquePatients.toLocaleString();
+            document.getElementById('returnRate').textContent = returnRate + '%';
+            document.getElementById('dataStatus').classList.remove('hidden');
+        }
+
+        // Calculate conversions for all touchpoints
+        function calculateAllConversions() {
+            conversionResults = {};
+
+            Object.keys(touchpoints).forEach(touchpointKey => {
+                const touchpoint = touchpoints[touchpointKey];
+                const monthlyResults = {};
+
+                const allDates = [...new Set(parsedData.map(row => row.APPOINTMENTDATE))];
+
+                allDates.forEach(todayDate => {
+                    try {
+                        const today = new Date(todayDate);
+                        if (isNaN(today.getTime())) return;
+
+                        const referenceDate = new Date(today);
+                        referenceDate.setDate(referenceDate.getDate() - touchpoint.lookback);
+
+                        const eligiblePatients = parsedData.filter(row => {
+                            const appointmentDate = new Date(row.APPOINTMENTDATE);
+                            return appointmentDate.toDateString() === referenceDate.toDateString();
+                        });
+
+                        const patientsNeedingReminder = eligiblePatients.filter(patient => {
+                            const patientId = patient.INTERNALID;
+                            return !parsedData.some(row => {
+                                if (row.INTERNALID !== patientId) return false;
+                                const apptDate = new Date(row.APPOINTMENTDATE);
+                                return apptDate > referenceDate && apptDate < today;
+                            });
+                        });
+
+                        const conversions = patientsNeedingReminder.filter(patient => {
+                            const patientId = patient.INTERNALID;
+                            const conversionWindowEnd = new Date(today);
+                            conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
+
+                            return parsedData.some(row => {
+                                if (row.INTERNALID !== patientId) return false;
+                                const apptDate = new Date(row.APPOINTMENTDATE);
+                                return apptDate > today && apptDate <= conversionWindowEnd;
+                            });
+                        });
+
+                        const monthKey = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}`;
+
+                        if (!monthlyResults[monthKey]) {
+                            monthlyResults[monthKey] = { remindersSent: 0, conversions: 0, month: monthKey };
+                        }
+
+                        monthlyResults[monthKey].remindersSent += patientsNeedingReminder.length;
+                        monthlyResults[monthKey].conversions += conversions.length;
+
+                    } catch (error) {
+                        console.error('Error processing date:', todayDate);
+                    }
+                });
+
+                Object.keys(monthlyResults).forEach(month => {
+                    const result = monthlyResults[month];
+                    result.conversionRate = result.remindersSent > 0 
+                        ? (result.conversions / result.remindersSent * 100).toFixed(1)
+                        : '0.0';
+                });
+
+                conversionResults[touchpointKey] = Object.values(monthlyResults).sort((a, b) => a.month.localeCompare(b.month));
+            });
+
+            updateMonthButtons();
+        }
+
+        // Update month filter buttons
+        function updateMonthButtons() {
+            const months = new Set();
+            Object.values(conversionResults).forEach(touchpointData => {
+                touchpointData.forEach(result => months.add(result.month));
+            });
+
+            const monthButtons = document.getElementById('monthButtons');
+            monthButtons.innerHTML = '<button class="button purple active" data-month="all">All Months</button>';
+
+            Array.from(months).sort().forEach(month => {
+                const button = document.createElement('button');
+                button.className = 'button purple';
+                button.dataset.month = month;
+                button.textContent = month;
+                monthButtons.appendChild(button);
+            });
+
+            // Add event listeners to month buttons
+            monthButtons.addEventListener('click', function(e) {
+                if (e.target.dataset.month) {
+                    selectedMonth = e.target.dataset.month;
+                    updateMonthButtonStates();
+                    updateDisplay();
+                }
+            });
+        }
+
+        // Update button states
+        function updateTouchpointButtonStates() {
+            document.querySelectorAll('[data-touchpoint]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.touchpoint === selectedTouchpoint);
+            });
+            document.getElementById('currentTouchpointLabel').textContent = `(${touchpoints[selectedTouchpoint].name})`;
+        }
+
+        function updateMonthButtonStates() {
+            document.querySelectorAll('[data-month]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.month === selectedMonth);
+            });
+
+            const filterInfo = document.getElementById('monthFilterInfo');
+            if (selectedMonth === 'all') {
+                filterInfo.classList.add('hidden');
+            } else {
+                filterInfo.classList.remove('hidden');
+                document.getElementById('selectedMonthText').textContent = `${selectedMonth} (${touchpoints[selectedTouchpoint].name})`;
+            }
+        }
+
+        // Update main display
+        function updateDisplay() {
+            const currentResults = conversionResults[selectedTouchpoint] || [];
+            const filteredResults = selectedMonth === 'all' 
+                ? currentResults 
+                : currentResults.filter(result => result.month === selectedMonth);
+
+            const totalReminders = filteredResults.reduce((sum, r) => sum + r.remindersSent, 0);
+            const totalConversions = filteredResults.reduce((sum, r) => sum + r.conversions, 0);
+            const overallRate = totalReminders > 0 ? (totalConversions / totalReminders * 100).toFixed(1) : '0.0';
+
+            document.getElementById('totalReminders').textContent = totalReminders.toLocaleString();
+            document.getElementById('totalConversions').textContent = totalConversions.toLocaleString();
+            document.getElementById('overallRate').textContent = overallRate + '%';
+
+            updateResultsTable(filteredResults);
+        }
+
+        // Update results table
+        function updateResultsTable(results) {
+            const container = document.getElementById('resultsTable');
+            
+            if (results.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 32px 0; color: #6b7280;">No data available for the selected touchpoint and month</div>';
+                return;
+            }
+
+            let tableHTML = `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Month</th>
+                                <th class="text-right">Reminders Sent</th>
+                                <th class="text-right">Conversions</th>
+                                <th class="text-right">Conversion Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            results.forEach((result, index) => {
+                const rate = parseFloat(result.conversionRate);
+                const rateClass = rate >= 20 ? 'rate-high' : rate >= 10 ? 'rate-medium' : 'rate-low';
+                
+                tableHTML += `
+                    <tr class="zebra">
+                        <td>${result.month}</td>
+                        <td class="text-right">${result.remindersSent.toLocaleString()}</td>
+                        <td class="text-right">${result.conversions.toLocaleString()}</td>
+                        <td class="text-right">
+                            <span class="conversion-rate ${rateClass}">${result.conversionRate}%</span>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += '</tbody></table></div>';
+            container.innerHTML = tableHTML;
+        }
+
+        // Event listeners for touchpoint buttons
+        document.getElementById('touchpointButtons').addEventListener('click', function(e) {
+            if (e.target.dataset.touchpoint) {
+                selectedTouchpoint = e.target.dataset.touchpoint;
+                updateTouchpointButtonStates();
+                updateDisplay();
+            }
+        });
+
+        // Initialize
+        updateTouchpointButtonStates();
+        updateMonthButtonStates();
+    </script>
+</body>
+</html>
