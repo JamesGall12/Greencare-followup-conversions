@@ -283,7 +283,7 @@
                 <p style="font-size: 14px; color: #6b7280; margin-top: 8px;">
                     Upload your clinic CSV file<br>
                     <strong>Column A</strong> = Patient IDs (INTERNALID)<br>
-                    <strong>Column J</strong> = Appointment Dates (APPOINTMENTDATE)
+                    <strong>Column B</strong> = Appointment Dates (APPOINTMENTDATE)
                 </p>
             </div>
             
@@ -311,6 +311,16 @@
                             <span id="returnRate" style="font-weight: bold; color: #15803d;">0%</span>
                         </div>
                     </div>
+                </div>
+            </div>
+            
+            <!-- Conversion Trend Chart -->
+            <div style="margin-top: 24px; padding: 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <h3 style="font-weight: 600; color: #1f2937; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+                    📈 <span id="chartTitle">Conversion Rate Trend - 6 Month Follow-up</span>
+                </h3>
+                <div id="conversionChart" style="width: 100%; height: 300px; background: white; border-radius: 6px; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; color: #6b7280;">
+                    Upload data to see conversion trend chart
                 </div>
             </div>
         </div>
@@ -352,6 +362,16 @@
                     <div style="font-weight: 500;">24 Month Follow-up</div>
                     <div style="font-size: 12px; opacity: 0.7;">720 days</div>
                 </button>
+            </div>
+            
+            <!-- Conversion Trend Chart -->
+            <div style="margin-top: 24px; padding: 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <h3 style="font-weight: 600; color: #1f2937; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+                    📈 <span id="chartTitle">Conversion Rate Trend - 6 Month Follow-up</span>
+                </h3>
+                <div id="conversionChart" style="width: 100%; height: 300px; background: white; border-radius: 6px; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; color: #6b7280;">
+                    Upload data to see conversion trend chart
+                </div>
             </div>
         </div>
 
@@ -415,6 +435,21 @@
                 </div>
             </div>
         </div>
+        <div class="card">
+            <div class="card-header">
+                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+                <h2>Conversion Results</h2>
+                <span style="font-size: 14px; color: #6b7280;" id="currentTouchpointLabel">(6 Month Follow-up)</span>
+            </div>
+            
+            <div id="resultsTable">
+                <div style="text-align: center; padding: 32px 0; color: #6b7280;">
+                    Upload your CSV data to see conversion results
+                </div>
+            </div>
+        </div>
 
         <!-- Insights -->
         <div class="insights">
@@ -433,7 +468,7 @@
                     <h4 style="font-weight: 500; margin-bottom: 4px; color: #1e40af;">Expected Data Format:</h4>
                     <ul style="font-size: 14px; color: #1e40af;">
                         <li>• <strong>Column A</strong> = Patient IDs (INTERNALID)</li>
-                        <li>• <strong>Column J</strong> = Appointment Dates (DD/MM/YYYY)</li>
+                        <li>• <strong>Column B</strong> = Appointment Dates (DD/MM/YYYY)</li>
                         <li>• CSV format without headers</li>
                         <li>• Export results to verify in Excel/other tools</li>
                     </ul>
@@ -719,7 +754,7 @@
                 const parsed = parseCSV(csvText);
                 console.log('Parse results:', parsed.data.length, 'rows');
 
-                // Map to your actual column positions: A=0, J=9
+                // Map to your actual column positions: A=0, B=1
                 parsedData = parsed.data.map((row, index) => {
                     // Only log first 3 rows to avoid console spam
                     if (index < 3) {
@@ -727,7 +762,7 @@
                     }
                     return {
                         INTERNALID: row[0],      // Column A
-                        APPOINTMENTDATE: row[9]  // Column J
+                        APPOINTMENTDATE: row[1]  // Column B
                     };
                 }).filter(row => {
                     return row.INTERNALID && row.APPOINTMENTDATE && 
@@ -920,6 +955,7 @@
             showStatus('✅ Conversion analysis complete!', 'success');
             updateMonthButtons();
             updateDisplay();
+            updateConversionChart(); // Add initial chart render
             
             // Enable export button
             document.getElementById('exportDataBtn').disabled = false;
@@ -957,6 +993,117 @@
             }
         }
 
+        // Create conversion trend chart
+        function updateConversionChart() {
+            const currentResults = conversionResults[selectedTouchpoint] || [];
+            const chartContainer = document.getElementById('conversionChart');
+            const chartTitle = document.getElementById('chartTitle');
+            
+            // Update chart title
+            chartTitle.textContent = `Conversion Rate Trend - ${touchpoints[selectedTouchpoint].name}`;
+            
+            if (currentResults.length === 0) {
+                chartContainer.innerHTML = '<div style="color: #6b7280;">No data available for chart</div>';
+                return;
+            }
+            
+            // Chart dimensions and margins
+            const width = chartContainer.offsetWidth || 800;
+            const height = 300;
+            const margin = { top: 20, right: 30, bottom: 60, left: 60 };
+            const chartWidth = width - margin.left - margin.right;
+            const chartHeight = height - margin.top - margin.bottom;
+            
+            // Prepare data
+            const data = currentResults.map(result => ({
+                month: result.month,
+                rate: parseFloat(result.conversionRate)
+            }));
+            
+            // Get min/max values
+            const maxRate = Math.max(...data.map(d => d.rate));
+            const minRate = Math.min(...data.map(d => d.rate));
+            const yMax = Math.max(maxRate * 1.1, 5); // At least 5% for scale
+            
+            // Create SVG
+            let svg = `
+                <svg width="${width}" height="${height}" style="background: white;">
+                    <!-- Grid lines -->
+                    <defs>
+                        <pattern id="grid" width="40" height="30" patternUnits="userSpaceOnUse">
+                            <path d="M 40 0 L 0 0 0 30" fill="none" stroke="#f1f5f9" stroke-width="1"/>
+                        </pattern>
+                    </defs>
+                    <rect x="${margin.left}" y="${margin.top}" width="${chartWidth}" height="${chartHeight}" fill="url(#grid)" />
+                    
+                    <!-- Y-axis -->
+                    <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + chartHeight}" stroke="#d1d5db" stroke-width="2"/>
+                    
+                    <!-- X-axis -->
+                    <line x1="${margin.left}" y1="${margin.top + chartHeight}" x2="${margin.left + chartWidth}" y2="${margin.top + chartHeight}" stroke="#d1d5db" stroke-width="2"/>
+                    
+                    <!-- Y-axis labels -->
+            `;
+            
+            // Add Y-axis labels (0% to yMax%)
+            for (let i = 0; i <= 5; i++) {
+                const yValue = (yMax / 5) * i;
+                const y = margin.top + chartHeight - (i / 5) * chartHeight;
+                svg += `
+                    <text x="${margin.left - 10}" y="${y + 5}" text-anchor="end" font-size="12" fill="#6b7280">
+                        ${yValue.toFixed(1)}%
+                    </text>
+                    <line x1="${margin.left - 5}" y1="${y}" x2="${margin.left}" y2="${y}" stroke="#d1d5db" stroke-width="1"/>
+                `;
+            }
+            
+            // Add X-axis labels and data points
+            const points = [];
+            data.forEach((d, index) => {
+                const x = data.length === 1 ? margin.left + chartWidth / 2 : margin.left + (index / (data.length - 1)) * chartWidth;
+                const y = margin.top + chartHeight - (d.rate / yMax) * chartHeight;
+                
+                points.push(`${x},${y}`);
+                
+                // X-axis labels
+                svg += `
+                    <text x="${x}" y="${margin.top + chartHeight + 20}" text-anchor="middle" font-size="11" fill="#6b7280">
+                        ${d.month}
+                    </text>
+                `;
+                
+                // Data points
+                svg += `
+                    <circle cx="${x}" cy="${y}" r="4" fill="#2563eb" stroke="white" stroke-width="2"/>
+                    <text x="${x}" y="${y - 10}" text-anchor="middle" font-size="10" fill="#1f2937" font-weight="600">
+                        ${d.rate}%
+                    </text>
+                `;
+            });
+            
+            // Add trend line
+            if (points.length > 1) {
+                svg += `<polyline points="${points.join(' ')}" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round"/>`;
+            }
+            
+            // Add axis labels
+            svg += `
+                <!-- Y-axis label -->
+                <text x="20" y="${margin.top + chartHeight / 2}" text-anchor="middle" font-size="14" fill="#374151" font-weight="600" transform="rotate(-90, 20, ${margin.top + chartHeight / 2})">
+                    Conversion Rate (%)
+                </text>
+                
+                <!-- X-axis label -->
+                <text x="${margin.left + chartWidth / 2}" y="${height - 10}" text-anchor="middle" font-size="14" fill="#374151" font-weight="600">
+                    Month
+                </text>
+            `;
+            
+            svg += '</svg>';
+            
+            chartContainer.innerHTML = svg;
+        }
+
         // Update display
         function updateDisplay() {
             const currentResults = conversionResults[selectedTouchpoint] || [];
@@ -974,6 +1121,7 @@
 
             updateResultsTable(filteredResults);
             updateButtonStates();
+            updateConversionChart(); // Add chart update
         }
 
         // Update results table
@@ -1073,6 +1221,13 @@
 
         // Initialize
         updateButtonStates();
+        
+        // Make chart responsive to window resize
+        window.addEventListener('resize', function() {
+            if (Object.keys(conversionResults).length > 0) {
+                setTimeout(updateConversionChart, 100); // Small delay to ensure container has new size
+            }
+        });
         
         console.log('Dashboard initialized - All event listeners attached properly');
     </script>
