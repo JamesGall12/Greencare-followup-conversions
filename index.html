@@ -324,14 +324,6 @@
                 <h2>Follow-Up Touchpoint</h2>
             </div>
             <div class="button-grid" id="touchpointButtons">
-                <button class="button active" data-touchpoint="2weeks">
-                    <div style="font-weight: 500;">2 Week Follow-up</div>
-                    <div style="font-size: 12px; opacity: 0.7;">14 days</div>
-                </button>
-                <button class="button" data-touchpoint="6weeks">
-                    <div style="font-weight: 500;">6 Week Follow-up</div>
-                    <div style="font-size: 12px; opacity: 0.7;">42 days</div>
-                </button>
                 <button class="button" data-touchpoint="3months">
                     <div style="font-weight: 500;">3 Month Follow-up</div>
                     <div style="font-size: 12px; opacity: 0.7;">90 days</div>
@@ -340,13 +332,25 @@
                     <div style="font-weight: 500;">5 Month Follow-up</div>
                     <div style="font-size: 12px; opacity: 0.7;">150 days</div>
                 </button>
-                <button class="button" data-touchpoint="6months">
+                <button class="button active" data-touchpoint="6months">
                     <div style="font-weight: 500;">6 Month Follow-up</div>
                     <div style="font-size: 12px; opacity: 0.7;">180 days</div>
+                </button>
+                <button class="button" data-touchpoint="9months">
+                    <div style="font-weight: 500;">9 Month Follow-up</div>
+                    <div style="font-size: 12px; opacity: 0.7;">270 days</div>
                 </button>
                 <button class="button" data-touchpoint="12months">
                     <div style="font-weight: 500;">12 Month Follow-up</div>
                     <div style="font-size: 12px; opacity: 0.7;">365 days</div>
+                </button>
+                <button class="button" data-touchpoint="18months">
+                    <div style="font-weight: 500;">18 Month Follow-up</div>
+                    <div style="font-size: 12px; opacity: 0.7;">540 days</div>
+                </button>
+                <button class="button" data-touchpoint="24months">
+                    <div style="font-weight: 500;">24 Month Follow-up</div>
+                    <div style="font-size: 12px; opacity: 0.7;">720 days</div>
                 </button>
             </div>
         </div>
@@ -402,7 +406,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
                 </svg>
                 <h2>Conversion Results</h2>
-                <span style="font-size: 14px; color: #6b7280;" id="currentTouchpointLabel">(2 Week Follow-up)</span>
+                <span style="font-size: 14px; color: #6b7280;" id="currentTouchpointLabel">(6 Month Follow-up)</span>
             </div>
             
             <div id="resultsTable">
@@ -910,13 +914,15 @@
             processCsvData('SAMPLE_DATA');
         });
 
-        // Touchpoint buttons - use direct container event handling
-        document.getElementById('touchpointButtons').addEventListener('click', handleTouchpointButtonClick);
+        // Touchpoint buttons - ensure clean event handling
+        const touchpointContainer = document.getElementById('touchpointButtons');
+        touchpointContainer.removeEventListener('click', handleTouchpointButtonClick); // Remove any existing
+        touchpointContainer.addEventListener('click', handleTouchpointButtonClick);
 
         // Initialize
         updateButtonStates();
         
-        console.log('Dashboard initialized - Event listeners attached');
+        console.log('Dashboard initialized - All event listeners attached properly');
     </script>
 </body>
 </html>
