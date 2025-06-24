@@ -517,6 +517,11 @@
 
                     if (processedDates <= 3) {
                         showDebug(`  Found ${patientsOnReferenceDate.length} patients with appointments on ${referenceDateStr}`);
+                        // Show specific patient IDs for manual verification
+                        if (patientsOnReferenceDate.length > 0) {
+                            const patientIds = patientsOnReferenceDate.map(p => p.INTERNALID).slice(0, 5);
+                            showDebug(`  Patient IDs: ${patientIds.join(', ')}${patientsOnReferenceDate.length > 5 ? ' (showing first 5)' : ''}`);
+                        }
                     }
 
                     if (patientsOnReferenceDate.length === 0) {
@@ -528,7 +533,7 @@
                         const patientId = refPatient.INTERNALID;
                         
                         // Check if this patient has any appointments between reference date and today (exclusive)
-                        const hasRebookedInBetween = rawData.some(row => {
+                        const rebookingAppointments = rawData.filter(row => {
                             if (row.INTERNALID !== patientId) return false;
                             
                             const appointmentDate = parseDate(row.APPOINTMENTDATE);
@@ -538,7 +543,17 @@
                             return appointmentDate > referenceDate && appointmentDate < todayDate;
                         });
 
-                        return !hasRebookedInBetween;
+                        // Show detailed rebooking info for first few patients for manual verification
+                        if (processedDates <= 3 && patientsOnReferenceDate.indexOf(refPatient) < 3) {
+                            if (rebookingAppointments.length > 0) {
+                                const rebookDates = rebookingAppointments.map(r => parseDate(r.APPOINTMENTDATE).toISOString().split('T')[0]);
+                                showDebug(`    Patient ${patientId}: REBOOKED on ${rebookDates.join(', ')} between ${referenceDateStr} and ${todayStr} ❌ EXCLUDED`);
+                            } else {
+                                showDebug(`    Patient ${patientId}: No rebooking between ${referenceDateStr} and ${todayStr} ✅ GETS REMINDER`);
+                            }
+                        }
+
+                        return rebookingAppointments.length === 0;
                     });
 
                     if (processedDates <= 3) {
