@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Greencare Follow-Up Conversion Dashboard</title>
+    <title>SMS Conversion Dashboard - Backwards Analysis</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
         * {
@@ -78,6 +78,57 @@
             padding: 20px;
         }
 
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4a7c59;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .debug-info {
+            background: #e3f2fd;
+            border: 1px solid #bbdefb;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 20px;
+            color: #0d47a1;
+            font-size: 0.85rem;
+            font-family: monospace;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .alert {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 20px;
+            color: #856404;
+            font-size: 0.9rem;
+        }
+
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
         .summary-cards {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -120,21 +171,13 @@
             font-size: 0.85rem;
         }
 
-        .chart-section {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
         .chart-container {
             background: white;
             border-radius: 12px;
             padding: 24px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
             height: 400px;
-            display: flex;
-            flex-direction: column;
+            margin-bottom: 20px;
         }
 
         .chart-container h3 {
@@ -142,13 +185,11 @@
             font-size: 1.1rem;
             margin-bottom: 20px;
             font-weight: 600;
-            flex-shrink: 0;
         }
 
         .chart-wrapper {
-            flex: 1;
+            height: 320px;
             position: relative;
-            min-height: 0;
         }
 
         .chart-wrapper canvas {
@@ -159,78 +200,7 @@
             height: 100% !important;
         }
 
-        .targets-section {
-            background: white;
-            border-radius: 12px;
-            padding: 24px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        }
-
-        .targets-section h3 {
-            color: #2d5a27;
-            font-size: 1.1rem;
-            margin-bottom: 20px;
-            font-weight: 600;
-        }
-
-        .target-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid #ecf0f1;
-        }
-
-        .target-item:last-child {
-            border-bottom: none;
-        }
-
-        .target-label {
-            font-size: 0.85rem;
-            color: #2c3e50;
-            font-weight: 500;
-        }
-
-        .target-input {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .target-input input {
-            width: 60px;
-            padding: 4px 8px;
-            border: 1px solid #bdc3c7;
-            border-radius: 4px;
-            text-align: center;
-            font-size: 0.85rem;
-        }
-
-        .target-input span {
-            font-size: 0.85rem;
-            color: #7f8c8d;
-        }
-
-        .performance-indicator {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-left: 8px;
-        }
-
-        .above-target {
-            background: #d5f5d5;
-            color: #27ae60;
-        }
-
-        .below-target {
-            background: #ffeaa7;
-            color: #e17055;
-        }
-
-        .detailed-table {
+        .results-table {
             background: white;
             border-radius: 12px;
             padding: 24px;
@@ -238,7 +208,7 @@
             overflow-x: auto;
         }
 
-        .detailed-table h3 {
+        .results-table h3 {
             color: #2d5a27;
             font-size: 1.1rem;
             margin-bottom: 20px;
@@ -270,28 +240,6 @@
             background: #f8f9fa;
         }
 
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #7f8c8d;
-        }
-
-        .loading-spinner {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #4a7c59;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-right: 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
         .export-btn {
             background: #4a7c59;
             color: white;
@@ -305,40 +253,6 @@
 
         .export-btn:hover {
             background: #2d5a27;
-        }
-
-        .alert {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            border-radius: 6px;
-            padding: 12px;
-            margin-bottom: 20px;
-            color: #856404;
-            font-size: 0.9rem;
-        }
-
-        .error {
-            background: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-        }
-
-        .debug-info {
-            background: #e3f2fd;
-            border: 1px solid #bbdefb;
-            border-radius: 6px;
-            padding: 12px;
-            margin-bottom: 20px;
-            color: #0d47a1;
-            font-size: 0.85rem;
-            font-family: monospace;
-        }
-
-        .breakdown-section {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-top: 20px;
         }
 
         .progress-bar {
@@ -356,47 +270,28 @@
             width: 0%;
             transition: width 0.3s ease;
         }
-
-        @media (max-width: 768px) {
-            .chart-section {
-                grid-template-columns: 1fr;
-            }
-            
-            .breakdown-section {
-                grid-template-columns: 1fr;
-            }
-
-            .header-content {
-                flex-direction: column;
-                gap: 15px;
-            }
-
-            .controls {
-                flex-wrap: wrap;
-            }
-        }
     </style>
 </head>
 <body>
     <header class="header">
         <div class="header-content">
             <div class="logo-section">
-                <h1>Greencare Follow-Up Dashboard</h1>
-                <p>SMS Conversion Performance & Target Tracking</p>
+                <h1>SMS Conversion Dashboard</h1>
+                <p>Backwards Analysis: Real SMS Timing Performance</p>
             </div>
             <div class="controls">
                 <select id="monthFilter">
                     <option value="">All Months</option>
                 </select>
-                <button onclick="refreshData()" class="export-btn">Refresh Data</button>
-                <button onclick="loadSampleData()" class="export-btn">Load Sample Data</button>
+                <button onclick="loadData()" class="export-btn">Load Data</button>
+                <button onclick="loadSampleData()" class="export-btn">Sample Data</button>
                 <button onclick="exportData()" class="export-btn">Export CSV</button>
             </div>
         </div>
     </header>
 
     <div class="container">
-        <div id="loadingSection" class="loading">
+        <div id="loadingSection" class="loading" style="display: none;">
             <div class="loading-spinner"></div>
             <div id="loadingText">Loading data...</div>
             <div class="progress-bar">
@@ -412,7 +307,7 @@
                 <div class="card">
                     <h3>Total Reminders Sent</h3>
                     <div class="value" id="totalReminders">-</div>
-                    <div class="subtitle">This period</div>
+                    <div class="subtitle">All touchpoints</div>
                 </div>
                 <div class="card">
                     <h3>Total Conversions</h3>
@@ -431,45 +326,24 @@
                 </div>
             </div>
 
-            <div class="chart-section">
-                <div class="chart-container">
-                    <h3>Conversion Rates by Touchpoint</h3>
-                    <div class="chart-wrapper">
-                        <canvas id="conversionChart"></canvas>
-                    </div>
-                </div>
-                <div class="targets-section">
-                    <h3>Monthly Targets</h3>
-                    <div id="targetsContainer"></div>
+            <div class="chart-container">
+                <h3>Conversion Rates by Touchpoint</h3>
+                <div class="chart-wrapper">
+                    <canvas id="conversionChart"></canvas>
                 </div>
             </div>
 
-            <div class="breakdown-section">
-                <div class="chart-container">
-                    <h3>Conversions by Booking Source</h3>
-                    <div class="chart-wrapper">
-                        <canvas id="sourceChart"></canvas>
-                    </div>
-                </div>
-                <div class="chart-container">
-                    <h3>Monthly Trend</h3>
-                    <div class="chart-wrapper">
-                        <canvas id="trendChart"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            <div class="detailed-table">
-                <h3>Detailed Touchpoint Performance</h3>
-                <table id="detailTable">
+            <div class="results-table">
+                <h3>Detailed Results by Touchpoint</h3>
+                <table id="resultsTable">
                     <thead>
                         <tr>
                             <th>Touchpoint</th>
+                            <th>Lookback Days</th>
                             <th>Reminders Sent</th>
                             <th>Conversions</th>
-                            <th>Rate</th>
-                            <th>Target</th>
-                            <th>Performance</th>
+                            <th>Conversion Rate</th>
+                            <th>Sample Days</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -481,21 +355,20 @@
     <script>
         // Global variables
         let rawData = [];
-        let processedData = {};
-        let targets = JSON.parse(localStorage.getItem('conversionTargets') || '{}');
-        let charts = {};
-        
+        let results = {};
+        let chart = null;
+
         // Touchpoint definitions - days to look back from "today"
         const touchpoints = {
-            '2 Weeks': { days: 14 },
-            '6 Weeks': { days: 42 },
-            '3 Months': { days: 90 },
-            '5 Months': { days: 150 },
-            'Script Expiry (6M)': { days: 175 },
-            '8 Months': { days: 240 },
-            '12 Months': { days: 365 },
-            '18 Months': { days: 545 },
-            '24 Months': { days: 730 }
+            '2 Weeks': 14,
+            '6 Weeks': 42,
+            '3 Months': 90,
+            '5 Months': 150,
+            'Script Expiry': 175,
+            '8 Months': 240,
+            '12 Months': 365,
+            '18 Months': 545,
+            '24 Months': 730
         };
 
         // Utility functions
@@ -521,28 +394,24 @@
             alertSection.appendChild(alert);
         }
 
-        function hideLoading() {
-            document.getElementById('loadingSection').style.display = 'none';
-            document.getElementById('dashboardContent').style.display = 'block';
-        }
-
         function showLoading() {
             document.getElementById('loadingSection').style.display = 'block';
             document.getElementById('dashboardContent').style.display = 'none';
         }
 
-        // Parse date safely - handle DD/MM/YYYY HH:MM:SS format specifically
+        function hideLoading() {
+            document.getElementById('loadingSection').style.display = 'none';
+            document.getElementById('dashboardContent').style.display = 'block';
+        }
+
+        // Parse date from DD/MM/YYYY format
         function parseDate(dateStr) {
             if (!dateStr || dateStr === '') return null;
             
-            // Remove any extra whitespace
-            dateStr = dateStr.trim();
-            
-            // Handle "DD/MM/YYYY HH:MM:SS" format specifically
-            if (dateStr.includes('/') && dateStr.includes(' ')) {
-                const datePart = dateStr.split(' ')[0]; // Take just "DD/MM/YYYY"
-                const [day, month, year] = datePart.split('/');
-                if (day && month && year && day.length <= 2 && month.length <= 2 && year.length === 4) {
+            // Handle DD/MM/YYYY format
+            if (dateStr.includes('/')) {
+                const [day, month, year] = dateStr.split('/');
+                if (day && month && year) {
                     const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
                     if (!isNaN(date.getTime())) {
                         return date;
@@ -552,237 +421,47 @@
             
             // Fallback to standard parsing
             const date = new Date(dateStr);
-            if (!isNaN(date.getTime())) {
-                return date;
-            }
-            
-            return null;
+            return !isNaN(date.getTime()) ? date : null;
         }
 
-        // Enhanced CSV parser with better column detection
+        // Parse CSV data
         function parseCSV(csvText) {
-            try {
-                const lines = csvText.split('\n').filter(line => line.trim());
-                if (lines.length === 0) return [];
-                
-                // Parse headers more carefully - handle quoted CSV properly
-                const headerLine = lines[0];
-                const headers = [];
-                let currentHeader = '';
-                let inQuotes = false;
-                
-                for (let i = 0; i < headerLine.length; i++) {
-                    const char = headerLine[i];
-                    if (char === '"') {
-                        inQuotes = !inQuotes;
-                    } else if (char === ',' && !inQuotes) {
-                        headers.push(currentHeader.trim().replace(/"/g, ''));
-                        currentHeader = '';
-                    } else {
-                        currentHeader += char;
-                    }
-                }
-                headers.push(currentHeader.trim().replace(/"/g, ''));
-                
-                showDebug(`Found ${headers.length} columns:`);
-                headers.forEach((header, index) => {
-                    showDebug(`Column ${String.fromCharCode(65 + index)}: ${header}`);
-                });
-                
-                // Try to map the expected columns to actual columns
-                const columnMapping = detectColumnMapping(headers);
-                showDebug(`Column mapping: ${JSON.stringify(columnMapping)}`);
-                
-                if (columnMapping.INTERNALID === undefined || columnMapping.APPOINTMENTDATE === undefined) {
-                    throw new Error('Could not find required columns INTERNALID and APPOINTMENTDATE');
-                }
-                
-                const data = [];
-                for (let i = 1; i < lines.length; i++) {
-                    const values = parseCSVRow(lines[i]);
-                    if (values.length >= headers.length) {
-                        const row = {};
-                        
-                        // Map to our expected column names
-                        row.INTERNALID = values[columnMapping.INTERNALID] || '';
-                        row.APPOINTMENTDATE = values[columnMapping.APPOINTMENTDATE] || '';
-                        row.APPOINTMENTTYPE = values[columnMapping.APPOINTMENTTYPE] || '';
-                        row.FIRSTAPPOINTMENT = values[columnMapping.FIRSTAPPOINTMENT] || '';
-                        row.LASTAPPOINTMENT = values[columnMapping.LASTAPPOINTMENT] || '';
-                        row.BOOKEDBY = values[columnMapping.BOOKEDBY] || '';
-                        row.APPOINTMENTWITH = values[columnMapping.APPOINTMENTWITH] || '';
-                        
-                        // Only include rows with required data
-                        if (row.INTERNALID && row.APPOINTMENTDATE) {
-                            data.push(row);
-                        }
-                    }
+            const lines = csvText.split('\n').filter(line => line.trim());
+            if (lines.length === 0) return [];
+            
+            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            showDebug(`Found ${headers.length} columns: ${headers.join(', ')}`);
+            
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+                if (values.length >= 2) {
+                    const row = {
+                        INTERNALID: values[0] || '',  // Column A
+                        APPOINTMENTDATE: values[9] || ''  // Column J (index 9)
+                    };
                     
-                    // Update progress every 500 rows
-                    if (i % 500 === 0) {
-                        updateProgress(50 + (i / lines.length) * 20, `Parsing row ${i}...`);
+                    if (row.INTERNALID && row.APPOINTMENTDATE) {
+                        data.push(row);
                     }
                 }
-                
-                showDebug(`Parsed ${data.length} valid records from ${lines.length - 1} total lines`);
-                
-                // Show sample of parsed data
-                if (data.length > 0) {
-                    showDebug(`Sample record: ${JSON.stringify(data[0])}`);
-                }
-                
-                return data;
-                
-            } catch (error) {
-                showAlert(`CSV parsing error: ${error.message}`, 'error');
-                return [];
             }
-        }
-
-        // Detect which columns in the CSV correspond to our required fields
-        function detectColumnMapping(headers) {
-            const mapping = {};
             
-            // Map based on your document specification:
-            // Column A – INTERNALID, Column J – APPOINTMENTDATE, etc.
-            headers.forEach((header, index) => {
-                const normalizedHeader = header.toLowerCase().trim();
-                
-                // Try to match column names
-                if (normalizedHeader.includes('internalid') || normalizedHeader.includes('internal_id') || normalizedHeader === 'internalid') {
-                    mapping.INTERNALID = index;
-                } else if (normalizedHeader.includes('appointmentdate') || normalizedHeader.includes('appointment_date')) {
-                    mapping.APPOINTMENTDATE = index;
-                } else if (normalizedHeader.includes('appointmenttype') || normalizedHeader.includes('appointment_type')) {
-                    mapping.APPOINTMENTTYPE = index;
-                } else if (normalizedHeader.includes('firstappointment') || normalizedHeader.includes('first_appointment')) {
-                    mapping.FIRSTAPPOINTMENT = index;
-                } else if (normalizedHeader.includes('lastappointment') || normalizedHeader.includes('last_appointment')) {
-                    mapping.LASTAPPOINTMENT = index;
-                } else if (normalizedHeader.includes('bookedby') || normalizedHeader.includes('booked_by')) {
-                    mapping.BOOKEDBY = index;
-                } else if (normalizedHeader.includes('appointmentwith') || normalizedHeader.includes('appointment_with')) {
-                    mapping.APPOINTMENTWITH = index;
-                }
-            });
-            
-            // If we can't find by name, try by position (A=0, J=9, K=10, M=12, N=13, H=7, I=8)
-            if (!mapping.INTERNALID && headers.length > 0) mapping.INTERNALID = 0; // Column A
-            if (!mapping.APPOINTMENTDATE && headers.length > 9) mapping.APPOINTMENTDATE = 9; // Column J
-            if (!mapping.APPOINTMENTTYPE && headers.length > 10) mapping.APPOINTMENTTYPE = 10; // Column K
-            if (!mapping.FIRSTAPPOINTMENT && headers.length > 12) mapping.FIRSTAPPOINTMENT = 12; // Column M
-            if (!mapping.LASTAPPOINTMENT && headers.length > 13) mapping.LASTAPPOINTMENT = 13; // Column N
-            if (!mapping.BOOKEDBY && headers.length > 7) mapping.BOOKEDBY = 7; // Column H
-            if (!mapping.APPOINTMENTWITH && headers.length > 8) mapping.APPOINTMENTWITH = 8; // Column I
-            
-            return mapping;
+            showDebug(`Parsed ${data.length} valid records`);
+            return data;
         }
 
-        // Parse a single CSV row handling quotes properly
-        function parseCSVRow(line) {
-            const values = [];
-            let current = '';
-            let inQuotes = false;
-            
-            for (let i = 0; i < line.length; i++) {
-                const char = line[i];
-                if (char === '"') {
-                    inQuotes = !inQuotes;
-                } else if (char === ',' && !inQuotes) {
-                    values.push(current.trim().replace(/"/g, ''));
-                    current = '';
-                } else {
-                    current += char;
-                }
-            }
-            values.push(current.trim().replace(/"/g, ''));
-            return values;
-        }
-
-        // Load data with timeout and error handling
-        async function loadData() {
-            try {
-                showLoading();
-                updateProgress(10, 'Connecting to Google Sheets...');
-                
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-                
-                const response = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vR0aMS5opoqMJG2BGhIy5Wet_7v6CtiWRbIrUsV3zMzNTnKasJnKsD7ooMd_u9bi7eDAIbYN5_ysXYl/pub?output=csv&gid=1705675423', {
-                    signal: controller.signal
-                });
-                
-                clearTimeout(timeoutId);
-                updateProgress(30, 'Downloading data...');
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const csvText = await response.text();
-                updateProgress(50, 'Parsing CSV data...');
-                
-                showDebug(`Downloaded ${csvText.length} characters of CSV data`);
-                
-                rawData = parseCSV(csvText);
-                updateProgress(70, 'Processing conversions...');
-                
-                if (rawData.length === 0) {
-                    throw new Error('No valid data found in CSV');
-                }
-                
-                // Process data in chunks to avoid blocking
-                await processDataAsync();
-                updateProgress(90, 'Rendering dashboard...');
-                
-                renderDashboard();
-                updateProgress(100, 'Complete!');
-                
-                setTimeout(hideLoading, 500);
-                
-            } catch (error) {
-                console.error('Error loading data:', error);
-                
-                if (error.name === 'AbortError') {
-                    showAlert('Request timed out. Please check your connection and try again.', 'error');
-                } else {
-                    showAlert(`Error loading data: ${error.message}`, 'error');
-                }
-                
-                // Show sample data option
-                showAlert('Would you like to load sample data to test the dashboard?', 'info');
-                hideLoading();
-            }
-        }
-
-        // Process data asynchronously to avoid blocking
-        async function processDataAsync() {
-            return new Promise((resolve) => {
-                setTimeout(() => {
-                    processData();
-                    resolve();
-                }, 100);
-            });
-        }
-
-        // Follow the NEW backwards-looking logic
-        function processData() {
+        // Main backwards analysis logic
+        function performBackwardsAnalysis() {
             const selectedMonth = document.getElementById('monthFilter').value;
             
-            processedData = {
-                conversions: {},
-                bySource: {},
-                byMonth: {},
-                summary: { total: 0, conversions: 0, rate: 0 }
-            };
-
-            // Initialize touchpoint data
+            results = {};
             Object.keys(touchpoints).forEach(tp => {
-                processedData.conversions[tp] = { sent: 0, converted: 0, rate: 0 };
+                results[tp] = { sent: 0, converted: 0, rate: 0, sampleDays: 0 };
             });
 
-            showDebug(`=== NEW BACKWARDS-LOOKING ANALYSIS ===`);
-            showDebug(`Processing ${rawData.length} appointment records...`);
+            showDebug(`=== STARTING BACKWARDS ANALYSIS ===`);
+            showDebug(`Processing ${rawData.length} appointment records`);
             showDebug(`Selected month filter: ${selectedMonth || 'All months'}`);
 
             // STEP 1: Get all unique appointment dates to loop through as "today"
@@ -791,18 +470,18 @@
                 .filter(date => date !== null)
                 .sort((a, b) => a - b);
 
-            showDebug(`STEP 1: Found ${allAppointmentDates.length} unique appointment dates to process`);
+            showDebug(`STEP 1: Found ${allAppointmentDates.length} unique appointment dates`);
 
             let processedDates = 0;
-            let totalRemindersInMonth = 0;
+            const totalDates = allAppointmentDates.length;
 
             // STEP 2: Loop through each appointment date as "today's date"
             allAppointmentDates.forEach(todayDate => {
                 processedDates++;
                 
-                if (processedDates % 50 === 0) {
-                    updateProgress(70 + (processedDates / allAppointmentDates.length) * 20, 
-                        `Processing date ${processedDates}/${allAppointmentDates.length}...`);
+                if (processedDates % 10 === 0) {
+                    updateProgress(20 + (processedDates / totalDates) * 60, 
+                        `Processing date ${processedDates}/${totalDates}...`);
                 }
 
                 const todayStr = todayDate.toISOString().split('T')[0];
@@ -814,18 +493,18 @@
                 }
 
                 // Debug first few dates
-                if (processedDates <= 2) {
+                if (processedDates <= 3) {
                     showDebug(`\n=== PROCESSING "TODAY" = ${todayStr} ===`);
                 }
 
                 // STEP 3: For each touchpoint, go back X time to find reference date
-                Object.entries(touchpoints).forEach(([touchpointName, config]) => {
+                Object.entries(touchpoints).forEach(([touchpointName, lookbackDays]) => {
                     const referenceDate = new Date(todayDate);
-                    referenceDate.setDate(referenceDate.getDate() - config.days);
+                    referenceDate.setDate(referenceDate.getDate() - lookbackDays);
                     const referenceDateStr = referenceDate.toISOString().split('T')[0];
 
-                    if (processedDates <= 2) {
-                        showDebug(`\n${touchpointName}: Looking back ${config.days} days from ${todayStr} to ${referenceDateStr}`);
+                    if (processedDates <= 3) {
+                        showDebug(`\n${touchpointName}: Looking back ${lookbackDays} days to ${referenceDateStr}`);
                     }
 
                     // STEP 4: Find all patients who had an appointment exactly on that reference date
@@ -836,15 +515,19 @@
                                row.INTERNALID;
                     });
 
-                    if (processedDates <= 2) {
+                    if (processedDates <= 3) {
                         showDebug(`  Found ${patientsOnReferenceDate.length} patients with appointments on ${referenceDateStr}`);
+                    }
+
+                    if (patientsOnReferenceDate.length === 0) {
+                        return; // No patients to process for this touchpoint on this day
                     }
 
                     // STEP 5: Eliminate patients who already rebooked between reference date and today
                     const eligiblePatients = patientsOnReferenceDate.filter(refPatient => {
                         const patientId = refPatient.INTERNALID;
                         
-                        // Check if this patient has any appointments between reference date and today (exclusive of both)
+                        // Check if this patient has any appointments between reference date and today (exclusive)
                         const hasRebookedInBetween = rawData.some(row => {
                             if (row.INTERNALID !== patientId) return false;
                             
@@ -858,29 +541,27 @@
                         return !hasRebookedInBetween;
                     });
 
-                    if (processedDates <= 2) {
+                    if (processedDates <= 3) {
                         showDebug(`  After eliminating rebookers: ${eligiblePatients.length} patients eligible for reminders`);
                         if (patientsOnReferenceDate.length > eligiblePatients.length) {
-                            showDebug(`  Filtered out ${patientsOnReferenceDate.length - eligiblePatients.length} patients who rebooked between ${referenceDateStr} and ${todayStr}`);
+                            showDebug(`  Filtered out ${patientsOnReferenceDate.length - eligiblePatients.length} patients who rebooked`);
                         }
                     }
 
                     // STEP 6: Count as "Reminders Sent" for this touchpoint on this day
                     const remindersSent = eligiblePatients.length;
-                    processedData.conversions[touchpointName].sent += remindersSent;
-                    totalRemindersInMonth += remindersSent;
+                    results[touchpointName].sent += remindersSent;
+                    if (remindersSent > 0) {
+                        results[touchpointName].sampleDays += 1;
+                    }
 
-                    if (processedDates <= 2 && remindersSent > 0) {
-                        showDebug(`  ✅ STEP 6: ${remindersSent} reminders sent for ${touchpointName} on ${todayStr}`);
+                    if (processedDates <= 3 && remindersSent > 0) {
+                        showDebug(`  ✅ ${remindersSent} reminders sent for ${touchpointName} on ${todayStr}`);
                     }
 
                     // STEP 7: Check for conversions (appointments within 0-30 days after today)
                     const conversionWindowEnd = new Date(todayDate);
                     conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
-
-                    if (processedDates <= 2 && remindersSent > 0) {
-                        showDebug(`  STEP 7: Checking conversions from ${todayStr} to ${conversionWindowEnd.toISOString().split('T')[0]}`);
-                    }
 
                     let conversions = 0;
                     eligiblePatients.forEach(patient => {
@@ -899,160 +580,164 @@
 
                         if (hasConversion) {
                             conversions++;
-                            
-                            // Track by booking source and month
-                            const conversionAppointment = rawData.find(row => {
-                                if (row.INTERNALID !== patientId) return false;
-                                const appointmentDate = parseDate(row.APPOINTMENTDATE);
-                                return appointmentDate && appointmentDate >= todayDate && appointmentDate <= conversionWindowEnd;
-                            });
-                            
-                            if (conversionAppointment) {
-                                const source = conversionAppointment.BOOKEDBY || 'Online';
-                                processedData.bySource[source] = (processedData.bySource[source] || 0) + 1;
-                                processedData.byMonth[todayMonth] = (processedData.byMonth[todayMonth] || 0) + 1;
-                            }
                         }
                     });
 
-                    processedData.conversions[touchpointName].converted += conversions;
+                    results[touchpointName].converted += conversions;
 
-                    if (processedDates <= 2 && (remindersSent > 0 || conversions > 0)) {
-                        showDebug(`  ✅ CONVERSIONS: ${conversions}/${remindersSent} patients converted (${remindersSent > 0 ? (conversions/remindersSent*100).toFixed(1) : 0}%)`);
+                    if (processedDates <= 3 && (remindersSent > 0 || conversions > 0)) {
+                        const rate = remindersSent > 0 ? (conversions / remindersSent * 100).toFixed(1) : 0;
+                        showDebug(`  ✅ CONVERSIONS: ${conversions}/${remindersSent} (${rate}%)`);
                     }
                 });
             });
 
-            showDebug(`\n=== ANALYSIS COMPLETE ===`);
-            showDebug(`Processed ${processedDates} unique appointment dates`);
-            showDebug(`Total reminders in selected period: ${totalRemindersInMonth}`);
-
-            // Calculate conversion rates
-            let totalSent = 0, totalConverted = 0;
-            Object.keys(processedData.conversions).forEach(tp => {
-                const data = processedData.conversions[tp];
+            // Calculate final conversion rates
+            Object.keys(results).forEach(tp => {
+                const data = results[tp];
                 data.rate = data.sent > 0 ? (data.converted / data.sent * 100) : 0;
-                totalSent += data.sent;
-                totalConverted += data.converted;
             });
 
-            processedData.summary = {
-                total: totalSent,
-                conversions: totalConverted,
-                rate: totalSent > 0 ? (totalConverted / totalSent * 100) : 0
-            };
+            showDebug(`\n=== ANALYSIS COMPLETE ===`);
+            showDebug(`Processed ${processedDates} appointment dates`);
 
             // Show final breakdown
-            showDebug(`\n=== RESULTS BY TOUCHPOINT ===`);
-            Object.entries(processedData.conversions).forEach(([name, data]) => {
+            showDebug(`\n=== FINAL RESULTS ===`);
+            Object.entries(results).forEach(([name, data]) => {
                 if (data.sent > 0) {
-                    showDebug(`${name}: ${data.sent} reminders → ${data.converted} conversions (${data.rate.toFixed(1)}%)`);
+                    showDebug(`${name}: ${data.sent} reminders → ${data.converted} conversions (${data.rate.toFixed(1)}%) over ${data.sampleDays} days`);
                 }
             });
+        }
 
-            if (totalSent === 0) {
-                showDebug(`❌ NO REMINDERS FOUND for selected criteria`);
+        // Load data from Google Sheets
+        async function loadData() {
+            try {
+                showLoading();
+                updateProgress(10, 'Connecting to Google Sheets...');
+                
+                const response = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vR0aMS5opoqMJG2BGhIy5Wet_7v6CtiWRbIrUsV3zMzNTnKasJnKsD7ooMd_u9bi7eDAIbYN5_ysXYl/pub?output=csv&gid=1705675423');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                updateProgress(30, 'Downloading data...');
+                const csvText = await response.text();
+                
+                updateProgress(50, 'Parsing CSV data...');
+                rawData = parseCSV(csvText);
+                
+                if (rawData.length === 0) {
+                    throw new Error('No valid data found in CSV');
+                }
+                
+                updateProgress(70, 'Performing backwards analysis...');
+                performBackwardsAnalysis();
+                
+                updateProgress(90, 'Rendering dashboard...');
+                renderDashboard();
+                
+                updateProgress(100, 'Complete!');
+                setTimeout(hideLoading, 500);
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showAlert(`Error loading data: ${error.message}`, 'error');
+                hideLoading();
             }
         }
 
-        // Load sample data for testing - updated for new logic
+        // Load sample data for testing
         function loadSampleData() {
             showLoading();
-            updateProgress(20, 'Generating sample data for backwards-looking logic...');
+            updateProgress(20, 'Generating sample data...');
             
-            // Generate sample data that works well with the new backwards logic
             rawData = [];
-            const samplePatients = 100;
+            const samplePatients = 50;
             const startDate = new Date();
-            startDate.setDate(startDate.getDate() - 400); // Start 400 days ago
+            startDate.setDate(startDate.getDate() - 800); // Start 800 days ago
             
             for (let i = 1; i <= samplePatients; i++) {
                 const patientId = `P${i.toString().padStart(3, '0')}`;
                 
-                // Generate 1-3 appointments per patient spread over the time period
-                const numAppointments = 1 + Math.floor(Math.random() * 3);
+                // Generate 1-4 appointments per patient
+                const numAppointments = 1 + Math.floor(Math.random() * 4);
                 
                 for (let j = 0; j < numAppointments; j++) {
                     const appointmentDate = new Date(startDate);
-                    appointmentDate.setDate(appointmentDate.getDate() + Math.random() * 400);
+                    appointmentDate.setDate(appointmentDate.getDate() + Math.random() * 800);
                     
                     // Don't create future appointments
                     if (appointmentDate > new Date()) continue;
                     
                     rawData.push({
                         INTERNALID: patientId,
-                        APPOINTMENTDATE: appointmentDate.toISOString().split('T')[0],
-                        APPOINTMENTTYPE: j === 0 ? 'Initial' : 'Follow',
-                        BOOKEDBY: Math.random() > 0.3 ? ['Dr Smith', 'Dr Johnson', 'Nurse Kate'][Math.floor(Math.random() * 3)] : ''
+                        APPOINTMENTDATE: appointmentDate.toISOString().split('T')[0]
                     });
                 }
             }
             
-            // Sort by appointment date (most recent first, as per your data)
+            // Sort by date (most recent first)
             rawData.sort((a, b) => new Date(b.APPOINTMENTDATE) - new Date(a.APPOINTMENTDATE));
             
-            updateProgress(50, 'Processing with backwards-looking logic...');
-            showDebug(`Generated ${rawData.length} appointment records for ${samplePatients} patients`);
+            updateProgress(50, 'Performing backwards analysis...');
+            showDebug(`Generated ${rawData.length} appointment records`);
             
-            // Process with the new logic
-            processData();
+            performBackwardsAnalysis();
             
             updateProgress(80, 'Rendering dashboard...');
             renderDashboard();
             
-            updateProgress(100, 'Sample data loaded with backwards-looking logic!');
-            showAlert('Sample data loaded successfully using the new backwards-looking approach. This should show realistic conversion numbers.', 'info');
+            updateProgress(100, 'Sample data loaded!');
+            showAlert('Sample data loaded successfully with backwards analysis logic.', 'info');
             
             setTimeout(hideLoading, 500);
         }
 
-        // Render dashboard with error handling
+        // Render dashboard
         function renderDashboard() {
-            try {
-                renderSummaryCards();
-                renderConversionChart();
-                renderSourceChart();
-                renderTrendChart();
-                renderDetailTable();
-                setupTargets();
-            } catch (error) {
-                showAlert(`Error rendering dashboard: ${error.message}`, 'error');
-            }
+            renderSummaryCards();
+            renderChart();
+            renderTable();
         }
 
-        // Simplified chart rendering
         function renderSummaryCards() {
-            const { summary, conversions } = processedData;
+            let totalSent = 0, totalConverted = 0, bestRate = 0, bestTouchpoint = 'N/A';
             
-            document.getElementById('totalReminders').textContent = summary.total.toLocaleString();
-            document.getElementById('totalConversions').textContent = summary.conversions.toLocaleString();
-            document.getElementById('overallRate').textContent = summary.rate.toFixed(1) + '%';
-            
-            let bestTouchpoint = 'N/A';
-            let bestRate = 0;
-            Object.entries(conversions).forEach(([name, data]) => {
+            Object.entries(results).forEach(([name, data]) => {
+                totalSent += data.sent;
+                totalConverted += data.converted;
+                
                 if (data.rate > bestRate && data.sent > 0) {
                     bestRate = data.rate;
                     bestTouchpoint = name;
                 }
             });
             
+            const overallRate = totalSent > 0 ? (totalConverted / totalSent * 100) : 0;
+            
+            document.getElementById('totalReminders').textContent = totalSent.toLocaleString();
+            document.getElementById('totalConversions').textContent = totalConverted.toLocaleString();
+            document.getElementById('overallRate').textContent = overallRate.toFixed(1) + '%';
             document.getElementById('bestTouchpoint').textContent = bestTouchpoint;
         }
 
-        function renderConversionChart() {
+        function renderChart() {
             const ctx = document.getElementById('conversionChart').getContext('2d');
-            const data = processedData.conversions;
             
-            if (charts.conversion) charts.conversion.destroy();
+            if (chart) chart.destroy();
             
-            charts.conversion = new Chart(ctx, {
+            const touchpointNames = Object.keys(results);
+            const conversionRates = Object.values(results).map(d => d.rate);
+            
+            chart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: Object.keys(data),
+                    labels: touchpointNames,
                     datasets: [{
                         label: 'Conversion Rate (%)',
-                        data: Object.values(data).map(d => d.rate),
+                        data: conversionRates,
                         backgroundColor: 'rgba(74, 124, 89, 0.7)',
                         borderColor: 'rgba(45, 90, 39, 1)',
                         borderWidth: 1
@@ -1064,7 +749,7 @@
                     scales: {
                         y: {
                             beginAtZero: true,
-                            max: 100
+                            max: Math.max(100, Math.max(...conversionRates) * 1.1)
                         }
                     },
                     plugins: {
@@ -1074,129 +759,21 @@
             });
         }
 
-        function renderSourceChart() {
-            const ctx = document.getElementById('sourceChart').getContext('2d');
-            const data = processedData.bySource;
-            
-            if (Object.keys(data).length === 0) {
-                data['Sample Online'] = 15;
-                data['Sample Staff'] = 10;
-            }
-            
-            if (charts.source) charts.source.destroy();
-            
-            charts.source = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: Object.keys(data),
-                    datasets: [{
-                        data: Object.values(data),
-                        backgroundColor: [
-                            'rgba(74, 124, 89, 0.8)',
-                            'rgba(120, 180, 120, 0.8)',
-                            'rgba(45, 90, 39, 0.8)',
-                            'rgba(100, 150, 100, 0.8)'
-                        ]
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        }
-                    }
-                }
-            });
-        }
-
-        function renderTrendChart() {
-            const ctx = document.getElementById('trendChart').getContext('2d');
-            
-            // Sample trend data
-            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-            const conversions = [12, 15, 18, 14, 22, 25];
-            
-            if (charts.trend) charts.trend.destroy();
-            
-            charts.trend = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: months,
-                    datasets: [{
-                        label: 'Conversions',
-                        data: conversions,
-                        borderColor: 'rgba(74, 124, 89, 1)',
-                        backgroundColor: 'rgba(74, 124, 89, 0.1)',
-                        tension: 0.4,
-                        fill: true
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false }
-                    }
-                }
-            });
-        }
-
-        function renderDetailTable() {
-            const tbody = document.querySelector('#detailTable tbody');
+        function renderTable() {
+            const tbody = document.querySelector('#resultsTable tbody');
             tbody.innerHTML = '';
             
-            Object.entries(processedData.conversions).forEach(([name, data]) => {
-                const target = targets[name] || 0;
-                const performance = data.rate - target;
-                const performanceClass = performance >= 0 ? 'above-target' : 'below-target';
-                const performanceText = performance >= 0 ? `+${performance.toFixed(1)}%` : `${performance.toFixed(1)}%`;
-                
+            Object.entries(results).forEach(([name, data]) => {
                 const row = tbody.insertRow();
                 row.innerHTML = `
                     <td>${name}</td>
+                    <td>${touchpoints[name]} days</td>
                     <td>${data.sent.toLocaleString()}</td>
                     <td>${data.converted.toLocaleString()}</td>
                     <td>${data.rate.toFixed(1)}%</td>
-                    <td>${target}%</td>
-                    <td>
-                        ${data.rate.toFixed(1)}%
-                        <span class="performance-indicator ${performanceClass}">
-                            ${performanceText}
-                        </span>
-                    </td>
+                    <td>${data.sampleDays}</td>
                 `;
             });
-        }
-
-        function setupTargets() {
-            const container = document.getElementById('targetsContainer');
-            container.innerHTML = '';
-            
-            Object.keys(touchpoints).forEach(name => {
-                const targetItem = document.createElement('div');
-                targetItem.className = 'target-item';
-                
-                const currentTarget = targets[name] || 0;
-                
-                targetItem.innerHTML = `
-                    <div class="target-label">${name}</div>
-                    <div class="target-input">
-                        <input type="number" min="0" max="100" value="${currentTarget}" 
-                               onchange="updateTarget('${name}', this.value)">
-                        <span>%</span>
-                    </div>
-                `;
-                
-                container.appendChild(targetItem);
-            });
-        }
-
-        function updateTarget(touchpoint, value) {
-            targets[touchpoint] = parseFloat(value) || 0;
-            localStorage.setItem('conversionTargets', JSON.stringify(targets));
-            renderDetailTable();
         }
 
         function setupMonthFilter() {
@@ -1216,32 +793,32 @@
             
             select.addEventListener('change', () => {
                 if (rawData.length > 0) {
-                    processData();
+                    performBackwardsAnalysis();
                     renderDashboard();
                 }
             });
         }
 
-        function refreshData() {
-            // Clear any existing alerts/debug info
-            document.getElementById('alertSection').innerHTML = '';
-            document.getElementById('debugSection').innerHTML = '';
-            loadData();
-        }
-
         function exportData() {
-            if (!processedData || Object.keys(processedData.conversions).length === 0) {
+            if (!results || Object.keys(results).length === 0) {
                 showAlert('No data to export. Please load data first.', 'error');
                 return;
             }
             
-            const csvContent = generateCSVReport();
-            const blob = new Blob([csvContent], { type: 'text/csv' });
+            let csv = 'SMS Conversion Report - Backwards Analysis\n';
+            csv += `Generated: ${new Date().toLocaleString()}\n\n`;
+            csv += 'Touchpoint,Lookback Days,Reminders Sent,Conversions,Conversion Rate,Sample Days\n';
+            
+            Object.entries(results).forEach(([name, data]) => {
+                csv += `"${name}",${touchpoints[name]},${data.sent},${data.converted},${data.rate.toFixed(1)}%,${data.sampleDays}\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.style.display = 'none';
             a.href = url;
-            a.download = `greencare-conversion-report-${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `sms-conversion-report-${new Date().toISOString().split('T')[0]}.csv`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -1250,40 +827,10 @@
             showAlert('Report exported successfully!', 'info');
         }
 
-        // Generate CSV report
-        function generateCSVReport() {
-            const selectedMonth = document.getElementById('monthFilter').value;
-            const monthText = selectedMonth ? ` for ${selectedMonth}` : '';
-            
-            let csv = `Greencare Follow-Up Conversion Report${monthText}\n`;
-            csv += `Generated: ${new Date().toLocaleString()}\n\n`;
-            csv += 'Touchpoint,Reminders Sent,Conversions,Conversion Rate,Target,Performance vs Target\n';
-            
-            Object.entries(processedData.conversions).forEach(([name, data]) => {
-                const target = targets[name] || 0;
-                const performance = data.rate - target;
-                csv += `"${name}",${data.sent},${data.converted},${data.rate.toFixed(1)}%,${target}%,${performance.toFixed(1)}%\n`;
-            });
-            
-            csv += '\nSummary\n';
-            csv += `Total Reminders Sent,${processedData.summary.total}\n`;
-            csv += `Total Conversions,${processedData.summary.conversions}\n`;
-            csv += `Overall Conversion Rate,${processedData.summary.rate.toFixed(1)}%\n`;
-            
-            if (Object.keys(processedData.bySource).length > 0) {
-                csv += '\nConversions by Booking Source\n';
-                Object.entries(processedData.bySource).forEach(([source, count]) => {
-                    csv += `${source || 'Online'},${count}\n`;
-                });
-            }
-            
-            return csv;
-        }
-
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             setupMonthFilter();
-            loadSampleData(); // Start with sample data, then user can try live data
+            showAlert('SMS Conversion Dashboard ready! Click "Load Data" to analyze your Google Sheets data or "Sample Data" to test.', 'info');
         });
     </script>
 </body>
