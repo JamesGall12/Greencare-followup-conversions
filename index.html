@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SMS Conversion Dashboard - Backwards Analysis</title>
+    <title>Historical SMS Analysis - Time-Travel CRM Logic</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
         * {
@@ -109,7 +109,7 @@
             color: #0d47a1;
             font-size: 0.85rem;
             font-family: monospace;
-            max-height: 300px;
+            max-height: 400px;
             overflow-y: auto;
         }
 
@@ -276,8 +276,8 @@
     <header class="header">
         <div class="header-content">
             <div class="logo-section">
-                <h1>SMS Conversion Dashboard</h1>
-                <p>Backwards Analysis: Real SMS Timing Performance</p>
+                <h1>Historical SMS Analysis</h1>
+                <p>Time-Travel CRM Logic: Historical LASTAPPOINTMENTDATE Tracking</p>
             </div>
             <div class="controls">
                 <select id="monthFilter">
@@ -334,9 +334,9 @@
             </div>
 
             <div class="results-table">
-                <h3>Manual Verification Examples</h3>
+                <h3>Historical Time-Travel Examples</h3>
                 <div id="verificationExamples" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-family: monospace; font-size: 0.85rem;">
-                    Run the analysis to see specific patient examples you can verify manually in your spreadsheet.
+                    Run the analysis to see time-travel examples showing how LASTAPPOINTMENTDATE changes over time.
                 </div>
             </div>
 
@@ -458,8 +458,19 @@
             return data;
         }
 
-        // Main backwards analysis logic
-        function performBackwardsAnalysis() {
+        // Calculate what a patient's LASTAPPOINTMENTDATE would have been on a specific historical date
+        function getPatientLastAppointmentAsOf(patientId, asOfDate) {
+            const patientAppointments = rawData
+                .filter(row => row.INTERNALID === patientId)
+                .map(row => parseDate(row.APPOINTMENTDATE))
+                .filter(date => date !== null && date <= asOfDate) // Only appointments on or before asOfDate
+                .sort((a, b) => b - a); // Sort descending (most recent first)
+            
+            return patientAppointments.length > 0 ? patientAppointments[0] : null;
+        }
+
+        // CORRECT: Historical time-travel CRM simulation
+        function performHistoricalAnalysis() {
             const selectedMonth = document.getElementById('monthFilter').value;
             
             results = {};
@@ -467,43 +478,31 @@
                 results[tp] = { sent: 0, converted: 0, rate: 0, sampleDays: 0 };
             });
 
-            showDebug(`=== STARTING BACKWARDS ANALYSIS ===`);
+            showDebug(`=== HISTORICAL TIME-TRAVEL ANALYSIS ===`);
             showDebug(`Processing ${rawData.length} appointment records`);
             showDebug(`Selected month filter: ${selectedMonth || 'All months'}`);
 
-            // Show date range analysis for debugging
-            const allDates = rawData.map(row => parseDate(row.APPOINTMENTDATE)).filter(d => d !== null);
-            const minDate = new Date(Math.min(...allDates));
-            const maxDate = new Date(Math.max(...allDates));
-            showDebug(`Data date range: ${minDate.toISOString().split('T')[0]} to ${maxDate.toISOString().split('T')[0]}`);
+            // Get all unique patients
+            const allPatients = [...new Set(rawData.map(row => row.INTERNALID))].filter(id => id);
+            showDebug(`Found ${allPatients.length} unique patients`);
 
-            // STEP 1: Get all unique appointment dates to loop through as "today"
+            // Get all unique appointment dates to simulate historical CRM runs
             const allAppointmentDates = [...new Set(rawData.map(row => row.APPOINTMENTDATE))]
                 .map(dateStr => parseDate(dateStr))
                 .filter(date => date !== null)
                 .sort((a, b) => a - b);
 
-            showDebug(`STEP 1: Found ${allAppointmentDates.length} unique appointment dates`);
-            
-            // Show what date ranges each touchpoint will be looking at
-            const sampleToday = allAppointmentDates[Math.floor(allAppointmentDates.length / 2)]; // Mid-point date
-            showDebug(`\n=== TOUCHPOINT DATE RANGES (using sample "today" = ${sampleToday.toISOString().split('T')[0]}) ===`);
-            Object.entries(touchpoints).forEach(([name, days]) => {
-                const refDate = new Date(sampleToday);
-                refDate.setDate(refDate.getDate() - days);
-                showDebug(`${name} (${days} days): looks at appointments on ${refDate.toISOString().split('T')[0]}`);
-            });
+            showDebug(`Will simulate CRM running on ${allAppointmentDates.length} historical dates`);
 
             let processedDates = 0;
-            const totalDates = allAppointmentDates.length;
 
-            // STEP 2: Loop through each appointment date as "today's date"
+            // For each historical date, simulate what the CRM would have done
             allAppointmentDates.forEach(todayDate => {
                 processedDates++;
                 
-                if (processedDates % 10 === 0) {
-                    updateProgress(20 + (processedDates / totalDates) * 60, 
-                        `Processing date ${processedDates}/${totalDates}...`);
+                if (processedDates % 5 === 0) {
+                    updateProgress(20 + (processedDates / allAppointmentDates.length) * 70, 
+                        `Time-traveling to date ${processedDates}/${allAppointmentDates.length}...`);
                 }
 
                 const todayStr = todayDate.toISOString().split('T')[0];
@@ -516,76 +515,57 @@
 
                 // Debug first few dates
                 if (processedDates <= 3) {
-                    showDebug(`\n=== PROCESSING "TODAY" = ${todayStr} ===`);
+                    showDebug(`\n=== TIME-TRAVEL TO ${todayStr} ===`);
                 }
 
-                // STEP 3: For each touchpoint, go back X time to find reference date
+                // For each touchpoint, check who should get reminders today
                 Object.entries(touchpoints).forEach(([touchpointName, lookbackDays]) => {
                     const referenceDate = new Date(todayDate);
                     referenceDate.setDate(referenceDate.getDate() - lookbackDays);
                     const referenceDateStr = referenceDate.toISOString().split('T')[0];
 
                     if (processedDates <= 3) {
-                        showDebug(`\n${touchpointName}: Looking back ${lookbackDays} days to ${referenceDateStr}`);
+                        showDebug(`\n${touchpointName}: Looking for patients whose LASTAPPOINTMENTDATE = ${referenceDateStr} on ${todayStr}`);
                     }
 
-                    // STEP 4: Find all patients who had an appointment exactly on that reference date
-                    const patientsOnReferenceDate = rawData.filter(row => {
-                        const appointmentDate = parseDate(row.APPOINTMENTDATE);
-                        return appointmentDate && 
-                               appointmentDate.getTime() === referenceDate.getTime() &&
-                               row.INTERNALID;
+                    // Find patients whose LASTAPPOINTMENTDATE (as of todayDate) equals the reference date
+                    const eligiblePatients = [];
+                    
+                    allPatients.forEach(patientId => {
+                        const lastAppointmentAsOfToday = getPatientLastAppointmentAsOf(patientId, todayDate);
+                        
+                        if (lastAppointmentAsOfToday && lastAppointmentAsOfToday.getTime() === referenceDate.getTime()) {
+                            eligiblePatients.push({
+                                patientId: patientId,
+                                lastAppointmentDate: lastAppointmentAsOfToday
+                            });
+                        }
                     });
 
                     if (processedDates <= 3) {
-                        showDebug(`  Found ${patientsOnReferenceDate.length} patients with appointments on ${referenceDateStr}`);
-                        // Show specific patient IDs for manual verification
-                        if (patientsOnReferenceDate.length > 0) {
-                            const patientIds = patientsOnReferenceDate.map(p => p.INTERNALID).slice(0, 5);
-                            showDebug(`  Patient IDs: ${patientIds.join(', ')}${patientsOnReferenceDate.length > 5 ? ' (showing first 5)' : ''}`);
-                        }
-                    }
-
-                    if (patientsOnReferenceDate.length === 0) {
-                        return; // No patients to process for this touchpoint on this day
-                    }
-
-                    // STEP 5: Eliminate patients who already rebooked between reference date and today
-                    const eligiblePatients = patientsOnReferenceDate.filter(refPatient => {
-                        const patientId = refPatient.INTERNALID;
-                        
-                        // Check if this patient has any appointments between reference date and today (exclusive)
-                        const rebookingAppointments = rawData.filter(row => {
-                            if (row.INTERNALID !== patientId) return false;
+                        showDebug(`  Found ${eligiblePatients.length} patients eligible for ${touchpointName} reminders`);
+                        if (eligiblePatients.length > 0) {
+                            const samplePatients = eligiblePatients.slice(0, 3).map(p => p.patientId);
+                            showDebug(`  Sample patient IDs: ${samplePatients.join(', ')}`);
                             
-                            const appointmentDate = parseDate(row.APPOINTMENTDATE);
-                            if (!appointmentDate) return false;
-                            
-                            // Check if appointment is after reference date but before today
-                            return appointmentDate > referenceDate && appointmentDate < todayDate;
-                        });
-
-                        // Show detailed rebooking info for first few patients for manual verification
-                        if (processedDates <= 3 && patientsOnReferenceDate.indexOf(refPatient) < 3) {
-                            if (rebookingAppointments.length > 0) {
-                                const rebookDates = rebookingAppointments.map(r => parseDate(r.APPOINTMENTDATE).toISOString().split('T')[0]);
-                                showDebug(`    Patient ${patientId}: REBOOKED on ${rebookDates.join(', ')} between ${referenceDateStr} and ${todayStr} ❌ EXCLUDED`);
-                            } else {
-                                showDebug(`    Patient ${patientId}: No rebooking between ${referenceDateStr} and ${todayStr} ✅ GETS REMINDER`);
+                            // Show time-travel example for first patient
+                            if (eligiblePatients.length > 0) {
+                                const firstPatient = eligiblePatients[0];
+                                const allAppointmentsForPatient = rawData
+                                    .filter(row => row.INTERNALID === firstPatient.patientId)
+                                    .map(row => parseDate(row.APPOINTMENTDATE).toISOString().split('T')[0])
+                                    .sort();
+                                showDebug(`    Patient ${firstPatient.patientId} appointments: ${allAppointmentsForPatient.join(', ')}`);
+                                showDebug(`    As of ${todayStr}, their LASTAPPOINTMENTDATE = ${referenceDateStr}`);
                             }
                         }
-
-                        return rebookingAppointments.length === 0;
-                    });
-
-                    if (processedDates <= 3) {
-                        showDebug(`  After eliminating rebookers: ${eligiblePatients.length} patients eligible for reminders`);
-                        if (patientsOnReferenceDate.length > eligiblePatients.length) {
-                            showDebug(`  Filtered out ${patientsOnReferenceDate.length - eligiblePatients.length} patients who rebooked`);
-                        }
                     }
 
-                    // STEP 6: Count as "Reminders Sent" for this touchpoint on this day
+                    if (eligiblePatients.length === 0) {
+                        return; // No reminders to send for this touchpoint today
+                    }
+
+                    // Count reminders sent
                     const remindersSent = eligiblePatients.length;
                     results[touchpointName].sent += remindersSent;
                     if (remindersSent > 0) {
@@ -596,14 +576,13 @@
                         showDebug(`  ✅ ${remindersSent} reminders sent for ${touchpointName} on ${todayStr}`);
                     }
 
-                    // STEP 7: Check for conversions (appointments within 0-30 days after today)
+                    // Check for conversions (appointments within 0-30 days after today)
                     const conversionWindowEnd = new Date(todayDate);
                     conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
-                    const conversionWindowEndStr = conversionWindowEnd.toISOString().split('T')[0];
 
                     let conversions = 0;
-                    eligiblePatients.forEach((patient, index) => {
-                        const patientId = patient.INTERNALID;
+                    eligiblePatients.forEach((patientInfo, index) => {
+                        const patientId = patientInfo.patientId;
                         
                         // Look for any appointment by this patient within 0-30 days after today
                         const conversionAppointments = rawData.filter(row => {
@@ -618,13 +597,13 @@
 
                         const hasConversion = conversionAppointments.length > 0;
 
-                        // Show detailed conversion info for first few patients for manual verification
-                        if (processedDates <= 3 && index < 3) {
+                        // Show detailed conversion info for first few patients
+                        if (processedDates <= 3 && index < 2) {
                             if (hasConversion) {
                                 const conversionDates = conversionAppointments.map(r => parseDate(r.APPOINTMENTDATE).toISOString().split('T')[0]);
-                                showDebug(`    Patient ${patientId}: CONVERTED on ${conversionDates.join(', ')} between ${todayStr} and ${conversionWindowEndStr} ✅`);
+                                showDebug(`    Patient ${patientId}: CONVERTED on ${conversionDates.join(', ')} ✅`);
                             } else {
-                                showDebug(`    Patient ${patientId}: No conversion between ${todayStr} and ${conversionWindowEndStr} ❌`);
+                                showDebug(`    Patient ${patientId}: No conversion within 30 days ❌`);
                             }
                         }
 
@@ -637,19 +616,19 @@
 
                     if (processedDates <= 3 && (remindersSent > 0 || conversions > 0)) {
                         const rate = remindersSent > 0 ? (conversions / remindersSent * 100).toFixed(1) : 0;
-                        showDebug(`  ✅ CONVERSIONS: ${conversions}/${remindersSent} (${rate}%)`);
+                        showDebug(`  CONVERSIONS: ${conversions}/${remindersSent} (${rate}%)`);
                     }
                 });
             });
 
-            // Calculate final conversion rates and add sanity checks
+            // Calculate final conversion rates
             Object.keys(results).forEach(tp => {
                 const data = results[tp];
                 data.rate = data.sent > 0 ? (data.converted / data.sent * 100) : 0;
             });
 
-            showDebug(`\n=== ANALYSIS COMPLETE ===`);
-            showDebug(`Processed ${processedDates} appointment dates`);
+            showDebug(`\n=== HISTORICAL ANALYSIS COMPLETE ===`);
+            showDebug(`Time-traveled through ${processedDates} historical dates`);
 
             // Show final breakdown
             showDebug(`\n=== FINAL RESULTS ===`);
@@ -659,39 +638,15 @@
                 }
             });
 
-            // SANITY CHECK: Flag suspicious results
+            // Sanity check
             showDebug(`\n=== SANITY CHECKS ===`);
             const sortedByLookback = Object.entries(touchpoints).sort((a, b) => a[1] - b[1]);
             
-            for (let i = 1; i < sortedByLookback.length; i++) {
-                const [shorterName, shorterDays] = sortedByLookback[i-1];
-                const [longerName, longerDays] = sortedByLookback[i];
-                
-                const shorterReminders = results[shorterName].sent;
-                const longerReminders = results[longerName].sent;
-                
-                if (longerReminders > shorterReminders && shorterReminders > 0) {
-                    showDebug(`🚨 SUSPICIOUS: ${longerName} (${longerDays} days) has ${longerReminders} reminders vs ${shorterName} (${shorterDays} days) with ${shorterReminders} reminders`);
-                    showDebug(`   This suggests a logic error - longer lookback periods should typically have fewer qualifying patients`);
-                }
-            }
-
-            // Show appointment volume by month to understand data distribution
-            const appointmentsByMonth = {};
-            rawData.forEach(row => {
-                const date = parseDate(row.APPOINTMENTDATE);
-                if (date) {
-                    const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-                    appointmentsByMonth[month] = (appointmentsByMonth[month] || 0) + 1;
-                }
+            showDebug(`Reminder counts by lookback period:`);
+            sortedByLookback.forEach(([name, days]) => {
+                const count = results[name].sent;
+                showDebug(`  ${name} (${days} days): ${count} reminders`);
             });
-            
-            showDebug(`\n=== APPOINTMENT VOLUME BY MONTH ===`);
-            Object.entries(appointmentsByMonth)
-                .sort(([a], [b]) => a.localeCompare(b))
-                .forEach(([month, count]) => {
-                    showDebug(`${month}: ${count} appointments`);
-                });
         }
 
         // Load data from Google Sheets
@@ -716,8 +671,8 @@
                     throw new Error('No valid data found in CSV');
                 }
                 
-                updateProgress(70, 'Performing backwards analysis...');
-                performBackwardsAnalysis();
+                updateProgress(70, 'Performing historical time-travel analysis...');
+                performHistoricalAnalysis();
                 
                 updateProgress(90, 'Rendering dashboard...');
                 renderDashboard();
@@ -738,19 +693,19 @@
             updateProgress(20, 'Generating sample data...');
             
             rawData = [];
-            const samplePatients = 50;
+            const samplePatients = 30;  // Smaller sample for faster processing
             const startDate = new Date();
-            startDate.setDate(startDate.getDate() - 800); // Start 800 days ago
+            startDate.setDate(startDate.getDate() - 400); // Start 400 days ago
             
             for (let i = 1; i <= samplePatients; i++) {
                 const patientId = `P${i.toString().padStart(3, '0')}`;
                 
-                // Generate 1-4 appointments per patient
-                const numAppointments = 1 + Math.floor(Math.random() * 4);
+                // Generate 1-3 appointments per patient over time
+                const numAppointments = 1 + Math.floor(Math.random() * 3);
                 
                 for (let j = 0; j < numAppointments; j++) {
                     const appointmentDate = new Date(startDate);
-                    appointmentDate.setDate(appointmentDate.getDate() + Math.random() * 800);
+                    appointmentDate.setDate(appointmentDate.getDate() + (j * 100) + Math.random() * 80);
                     
                     // Don't create future appointments
                     if (appointmentDate > new Date()) continue;
@@ -762,19 +717,19 @@
                 }
             }
             
-            // Sort by date (most recent first)
-            rawData.sort((a, b) => new Date(b.APPOINTMENTDATE) - new Date(a.APPOINTMENTDATE));
+            // Sort by date
+            rawData.sort((a, b) => new Date(a.APPOINTMENTDATE) - new Date(b.APPOINTMENTDATE));
             
-            updateProgress(50, 'Performing backwards analysis...');
+            updateProgress(50, 'Performing historical time-travel analysis...');
             showDebug(`Generated ${rawData.length} appointment records`);
             
-            performBackwardsAnalysis();
+            performHistoricalAnalysis();
             
             updateProgress(80, 'Rendering dashboard...');
             renderDashboard();
             
             updateProgress(100, 'Sample data loaded!');
-            showAlert('Sample data loaded successfully with backwards analysis logic.', 'info');
+            showAlert('Sample data loaded with historical time-travel analysis.', 'info');
             
             setTimeout(hideLoading, 500);
         }
@@ -848,83 +803,45 @@
             const container = document.getElementById('verificationExamples');
             
             if (rawData.length === 0) {
-                container.innerHTML = 'Load data to see verification examples.';
+                container.innerHTML = 'Load data to see time-travel examples.';
                 return;
             }
             
-            // Create manual verification examples
-            let examples = `📋 MANUAL VERIFICATION GUIDE:\n\n`;
-            examples += `To verify the logic is working correctly, check these examples in your spreadsheet:\n\n`;
+            let examples = `📋 HISTORICAL TIME-TRAVEL VERIFICATION:\n\n`;
+            examples += `This analysis simulates your CRM running on each historical date.\n`;
+            examples += `For each date, it calculates what each patient's LASTAPPOINTMENTDATE would have been.\n\n`;
             
-            // Find a recent date with some activity
-            const recentDates = [...new Set(rawData.map(row => row.APPOINTMENTDATE))]
-                .map(dateStr => parseDate(dateStr))
-                .filter(date => date !== null)
-                .sort((a, b) => b - a)
-                .slice(0, 5);
-            
-            if (recentDates.length > 0) {
-                const exampleDate = recentDates[0];
-                const exampleDateStr = exampleDate.toISOString().split('T')[0];
+            // Show example of how a patient's LASTAPPOINTMENTDATE changes over time
+            const samplePatient = rawData[0]?.INTERNALID;
+            if (samplePatient) {
+                const patientAppointments = rawData
+                    .filter(row => row.INTERNALID === samplePatient)
+                    .map(row => parseDate(row.APPOINTMENTDATE))
+                    .filter(date => date)
+                    .sort((a, b) => a - b);
                 
-                examples += `🔍 EXAMPLE: If "today" = ${exampleDateStr}\n\n`;
+                examples += `🔍 TIME-TRAVEL EXAMPLE - Patient ${samplePatient}:\n`;
+                examples += `Appointments: ${patientAppointments.map(d => d.toISOString().split('T')[0]).join(', ')}\n\n`;
                 
-                // Show examples for different touchpoints
-                ['3 Months', '6 Weeks'].forEach(touchpointName => {
-                    const lookbackDays = touchpoints[touchpointName];
-                    const referenceDate = new Date(exampleDate);
-                    referenceDate.setDate(referenceDate.getDate() - lookbackDays);
-                    const referenceDateStr = referenceDate.toISOString().split('T')[0];
+                examples += `Historical LASTAPPOINTMENTDATE evolution:\n`;
+                patientAppointments.forEach((apptDate, index) => {
+                    const dateStr = apptDate.toISOString().split('T')[0];
+                    examples += `• On ${dateStr}: LASTAPPOINTMENTDATE = ${dateStr}\n`;
                     
-                    const patientsOnRefDate = rawData.filter(row => {
-                        const appointmentDate = parseDate(row.APPOINTMENTDATE);
-                        return appointmentDate && 
-                               appointmentDate.getTime() === referenceDate.getTime() &&
-                               row.INTERNALID;
-                    });
-                    
-                    examples += `${touchpointName} Touchpoint (${lookbackDays} days back):\n`;
-                    examples += `• Reference Date: ${referenceDateStr}\n`;
-                    examples += `• Patients with appointments on ${referenceDateStr}: ${patientsOnRefDate.length}\n`;
-                    
-                    if (patientsOnRefDate.length > 0) {
-                        const samplePatients = patientsOnRefDate.slice(0, 3);
-                        examples += `• Sample Patient IDs to check: ${samplePatients.map(p => p.INTERNALID).join(', ')}\n`;
-                        
-                        examples += `\n📋 TO VERIFY MANUALLY:\n`;
-                        examples += `1. Search your spreadsheet for appointments on ${referenceDateStr}\n`;
-                        examples += `2. Note the patient IDs (Column A)\n`;
-                        examples += `3. For each patient, check if they had ANY appointments between ${referenceDateStr} and ${exampleDateStr}\n`;
-                        examples += `4. If they did rebook → they DON'T get a reminder\n`;
-                        examples += `5. If they didn't rebook → they DO get a reminder on ${exampleDateStr}\n`;
-                        examples += `6. For those who got reminders, check if they booked within 30 days after ${exampleDateStr}\n`;
-                        examples += `7. If they booked → count as conversion\n\n`;
-                    } else {
-                        examples += `• No patients found (no reminders sent for this touchpoint on this day)\n\n`;
+                    if (index < patientAppointments.length - 1) {
+                        const nextAppt = patientAppointments[index + 1];
+                        const daysBetween = Math.floor((nextAppt - apptDate) / (1000 * 60 * 60 * 24));
+                        examples += `  (stays ${dateStr} for ${daysBetween} days until next appointment)\n`;
                     }
                 });
-                
-                // Add specific patient tracing examples
-                const allPatientIds = [...new Set(rawData.map(row => row.INTERNALID))].filter(id => id);
-                if (allPatientIds.length > 0) {
-                    const samplePatientId = allPatientIds[0];
-                    const patientAppointments = rawData
-                        .filter(row => row.INTERNALID === samplePatientId)
-                        .map(row => parseDate(row.APPOINTMENTDATE))
-                        .filter(date => date !== null)
-                        .sort((a, b) => a - b)
-                        .map(date => date.toISOString().split('T')[0]);
-                    
-                    examples += `🔍 PATIENT TRACE EXAMPLE:\n`;
-                    examples += `Patient ${samplePatientId} appointments: ${patientAppointments.join(', ')}\n`;
-                    examples += `\n✅ You can manually trace this patient through the logic:\n`;
-                    examples += `• Find all dates where this patient would qualify for reminders\n`;
-                    examples += `• Check for rebooking exclusions\n`;
-                    examples += `• Verify conversion windows\n\n`;
-                }
             }
             
-            examples += `💡 TIP: The debug output above shows detailed calculations for the first 3 dates processed.`;
+            examples += `\n✅ VERIFICATION PROCESS:\n`;
+            examples += `1. Pick any historical date from the debug output\n`;
+            examples += `2. For each patient, manually calculate their LASTAPPOINTMENTDATE as of that date\n`;
+            examples += `3. Check which touchpoint reference dates match those LASTAPPOINTMENTDATE values\n`;
+            examples += `4. Verify those patients would get SMS reminders on that date\n`;
+            examples += `5. Check for conversions in the following 30 days\n`;
             
             container.innerHTML = examples;
         }
@@ -963,7 +880,7 @@
             
             select.addEventListener('change', () => {
                 if (rawData.length > 0) {
-                    performBackwardsAnalysis();
+                    performHistoricalAnalysis();
                     renderDashboard();
                 }
             });
@@ -975,7 +892,7 @@
                 return;
             }
             
-            let csv = 'SMS Conversion Report - Backwards Analysis\n';
+            let csv = 'SMS Conversion Report - Historical Time-Travel Analysis\n';
             csv += `Generated: ${new Date().toLocaleString()}\n\n`;
             csv += 'Touchpoint,Lookback Days,Reminders Sent,Conversions,Conversion Rate,Sample Days\n';
             
@@ -988,7 +905,7 @@
             const a = document.createElement('a');
             a.style.display = 'none';
             a.href = url;
-            a.download = `sms-conversion-report-${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `sms-conversion-historical-${new Date().toISOString().split('T')[0]}.csv`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -1000,7 +917,7 @@
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             setupMonthFilter();
-            showAlert('SMS Conversion Dashboard ready! Click "Load Data" to analyze your Google Sheets data or "Sample Data" to test.', 'info');
+            showAlert('Historical Time-Travel Analysis ready! This calculates what each patient\'s LASTAPPOINTMENTDATE would have been on each historical date.', 'info');
         });
     </script>
 </body>
