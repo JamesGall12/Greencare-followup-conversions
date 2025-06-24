@@ -504,36 +504,17 @@
             return { data: data, errors: [] };
         }
 
-        // Show status message with progress support
-        function showStatus(message, type = 'info', showProgress = false) {
+        // Show status message
+        function showStatus(message, type = 'info') {
             const statusEl = document.getElementById('statusMessage');
             statusEl.className = `status-message status-${type}`;
-            
-            if (showProgress) {
-                statusEl.innerHTML = `
-                    <div>${message}</div>
-                    <div style="background: #e5e7eb; border-radius: 4px; height: 8px; margin-top: 8px; overflow: hidden;">
-                        <div id="progressBar" style="background: #2563eb; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
-                    </div>
-                `;
-            } else {
-                statusEl.textContent = message;
-            }
-            
+            statusEl.textContent = message;
             statusEl.classList.remove('hidden');
             
-            if (type === 'success' && !showProgress) {
+            if (type === 'success') {
                 setTimeout(() => {
                     statusEl.classList.add('hidden');
                 }, 3000);
-            }
-        }
-
-        // Update progress bar
-        function updateProgress(percentage) {
-            const progressBar = document.getElementById('progressBar');
-            if (progressBar) {
-                progressBar.style.width = percentage + '%';
             }
         }
 
@@ -590,7 +571,6 @@
 
                 // Map to your actual column positions: A=0, J=9
                 parsedData = parsed.data.map((row, index) => {
-                    // Only log first 3 rows to avoid console spam
                     if (index < 3) {
                         console.log(`Row ${index}:`, row);
                     }
@@ -606,14 +586,10 @@
                 console.log('Filtered data length:', parsedData.length);
 
                 if (parsedData.length > 0) {
-                    showStatus('✅ Data loaded! Starting analysis...', 'success');
+                    showStatus('✅ Data processed successfully!', 'success');
                     updateDataStatus();
-                    
-                    // Start the optimized conversion calculation
-                    setTimeout(() => {
-                        calculateAllConversions();
-                    }, 500); // Small delay to let UI update
-                    
+                    calculateAllConversions();
+                    updateDisplay();
                 } else {
                     showStatus('❌ No valid data found. Check your CSV format.', 'error');
                 }
@@ -652,161 +628,149 @@
             document.getElementById('dataStatus').classList.remove('hidden');
         }
 
-        // Calculate conversions for all touchpoints (optimized with chunked processing)
+        // Calculate conversions for all touchpoints
         function calculateAllConversions() {
-            console.log('=== STARTING OPTIMIZED CONVERSION CALCULATION ===');
+            console.log('=== STARTING CONVERSION CALCULATION ===');
             console.log('Total parsed data:', parsedData.length);
-            
-            showStatus('🔄 Calculating conversions...', 'info', true);
-            updateProgress(0);
             
             // Check date formats first
             console.log('Sample appointment dates (DD/MM/YYYY format):');
-            parsedData.slice(0, 3).forEach((row, i) => {
+            parsedData.slice(0, 5).forEach((row, i) => {
                 const originalDate = row.APPOINTMENTDATE;
                 const parsedDate = parseAustralianDate(originalDate);
                 console.log(`${i}: "${originalDate}" -> parsed: ${parsedDate ? parsedDate.toDateString() : 'Invalid'}`);
             });
             
             conversionResults = {};
-            const touchpointKeys = Object.keys(touchpoints);
-            const allDates = [...new Set(parsedData.map(row => row.APPOINTMENTDATE))];
-            
-            console.log(`Processing ${touchpointKeys.length} touchpoints across ${allDates.length} dates`);
-            
-            let currentTouchpointIndex = 0;
-            
-            // Process one touchpoint at a time to avoid blocking
-            function processNextTouchpoint() {
-                if (currentTouchpointIndex >= touchpointKeys.length) {
-                    // All touchpoints processed
-                    console.log('=== CONVERSION CALCULATION COMPLETE ===');
-                    updateProgress(100);
-                    showStatus('✅ Conversion analysis complete!', 'success');
-                    updateMonthButtons();
-                    updateDisplay();
-                    return;
-                }
+
+            Object.keys(touchpoints).forEach(touchpointKey => {
+                console.log(`\n--- Processing ${touchpointKey} (${touchpoints[touchpointKey].lookback} days back) ---`);
                 
-                const touchpointKey = touchpointKeys[currentTouchpointIndex];
                 const touchpoint = touchpoints[touchpointKey];
-                const progress = (currentTouchpointIndex / touchpointKeys.length) * 100;
-                
-                updateProgress(progress);
-                showStatus(`🔄 Processing ${touchpoint.name}...`, 'info', true);
-                
-                console.log(`\n--- Processing ${touchpointKey} (${touchpoint.lookback} days back) ---`);
-                
                 const monthlyResults = {};
+
+                const allDates = [...new Set(parsedData.map(row => row.APPOINTMENTDATE))];
+                console.log(`Unique appointment dates: ${allDates.length}`);
+                console.log('First few dates:', allDates.slice(0, 5));
+
+                let processedDates = 0;
                 let totalEligibleFound = 0;
                 let totalRemindersNeeded = 0;
                 let totalConversions = 0;
-                
-                let currentDateIndex = 0;
-                const chunkSize = 50; // Process 50 dates at a time
-                
-                // Process dates in chunks
-                function processDateChunk() {
-                    const endIndex = Math.min(currentDateIndex + chunkSize, allDates.length);
-                    
-                    for (let i = currentDateIndex; i < endIndex; i++) {
-                        const todayDate = allDates[i];
-                        
-                        try {
-                            const today = parseAustralianDate(todayDate);
-                            if (!today || isNaN(today.getTime())) continue;
 
-                            const referenceDate = new Date(today);
-                            referenceDate.setDate(referenceDate.getDate() - touchpoint.lookback);
-
-                            // Find patients who had appointment exactly on reference date
-                            const eligiblePatients = parsedData.filter(row => {
-                                const appointmentDate = parseAustralianDate(row.APPOINTMENTDATE);
-                                if (!appointmentDate) return false;
-                                return appointmentDate.toDateString() === referenceDate.toDateString();
-                            });
-
-                            totalEligibleFound += eligiblePatients.length;
-
-                            // Remove patients who already rebooked
-                            const patientsNeedingReminder = eligiblePatients.filter(patient => {
-                                const patientId = patient.INTERNALID;
-                                const hasRebookedAlready = parsedData.some(row => {
-                                    if (row.INTERNALID !== patientId) return false;
-                                    const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
-                                    if (!apptDate) return false;
-                                    return apptDate > referenceDate && apptDate < today;
-                                });
-                                return !hasRebookedAlready;
-                            });
-
-                            totalRemindersNeeded += patientsNeedingReminder.length;
-
-                            // Check for conversions
-                            const conversions = patientsNeedingReminder.filter(patient => {
-                                const patientId = patient.INTERNALID;
-                                const conversionWindowEnd = new Date(today);
-                                conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
-
-                                return parsedData.some(row => {
-                                    if (row.INTERNALID !== patientId) return false;
-                                    const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
-                                    if (!apptDate) return false;
-                                    return apptDate > today && apptDate <= conversionWindowEnd;
-                                });
-                            });
-
-                            totalConversions += conversions.length;
-
-                            // Group by month
-                            const monthKey = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}`;
-
-                            if (!monthlyResults[monthKey]) {
-                                monthlyResults[monthKey] = { remindersSent: 0, conversions: 0, month: monthKey };
-                            }
-
-                            monthlyResults[monthKey].remindersSent += patientsNeedingReminder.length;
-                            monthlyResults[monthKey].conversions += conversions.length;
-
-                        } catch (error) {
-                            console.error(`Error processing date "${todayDate}":`, error);
+                allDates.forEach((todayDate, index) => {
+                    try {
+                        const today = parseAustralianDate(todayDate);
+                        if (!today || isNaN(today.getTime())) {
+                            console.warn(`Invalid date: "${todayDate}"`);
+                            return;
                         }
-                    }
-                    
-                    currentDateIndex = endIndex;
-                    
-                    if (currentDateIndex < allDates.length) {
-                        // More dates to process, continue with next chunk
-                        setTimeout(processDateChunk, 1); // Small delay to keep UI responsive
-                    } else {
-                        // Finished this touchpoint
-                        console.log(`${touchpointKey} Summary:`);
-                        console.log(`- Total eligible patients found: ${totalEligibleFound}`);
-                        console.log(`- Total reminders needed: ${totalRemindersNeeded}`);
-                        console.log(`- Total conversions: ${totalConversions}`);
 
-                        // Calculate conversion rates
-                        Object.keys(monthlyResults).forEach(month => {
-                            const result = monthlyResults[month];
-                            result.conversionRate = result.remindersSent > 0 
-                                ? (result.conversions / result.remindersSent * 100).toFixed(1)
-                                : '0.0';
+                        const referenceDate = new Date(today);
+                        referenceDate.setDate(referenceDate.getDate() - touchpoint.lookback);
+
+                        // Debug first few iterations
+                        if (index < 3) {
+                            console.log(`\nIteration ${index}:`);
+                            console.log(`Today: ${today.toDateString()}`);
+                            console.log(`Reference date (${touchpoint.lookback} days back): ${referenceDate.toDateString()}`);
+                        }
+
+                        // Find patients who had appointment exactly on reference date
+                        const eligiblePatients = parsedData.filter(row => {
+                            const appointmentDate = parseAustralianDate(row.APPOINTMENTDATE);
+                            if (!appointmentDate) return false;
+                            const matches = appointmentDate.toDateString() === referenceDate.toDateString();
+                            return matches;
                         });
 
-                        conversionResults[touchpointKey] = Object.values(monthlyResults).sort((a, b) => a.month.localeCompare(b.month));
-                        
-                        // Move to next touchpoint
-                        currentTouchpointIndex++;
-                        setTimeout(processNextTouchpoint, 10); // Short delay before next touchpoint
+                        if (index < 3) {
+                            console.log(`Patients with appointments on ${referenceDate.toDateString()}: ${eligiblePatients.length}`);
+                        }
+
+                        totalEligibleFound += eligiblePatients.length;
+
+                        // Remove patients who already rebooked between reference date and today
+                        const patientsNeedingReminder = eligiblePatients.filter(patient => {
+                            const patientId = patient.INTERNALID;
+                            const hasRebookedAlready = parsedData.some(row => {
+                                if (row.INTERNALID !== patientId) return false;
+                                const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
+                                if (!apptDate) return false;
+                                return apptDate > referenceDate && apptDate < today;
+                            });
+                            return !hasRebookedAlready;
+                        });
+
+                        if (index < 3) {
+                            console.log(`Patients needing reminder: ${patientsNeedingReminder.length}`);
+                        }
+
+                        totalRemindersNeeded += patientsNeedingReminder.length;
+
+                        // Check for conversions (appointments within 30 days after today)
+                        const conversions = patientsNeedingReminder.filter(patient => {
+                            const patientId = patient.INTERNALID;
+                            const conversionWindowEnd = new Date(today);
+                            conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
+
+                            const hasConversion = parsedData.some(row => {
+                                if (row.INTERNALID !== patientId) return false;
+                                const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
+                                if (!apptDate) return false;
+                                return apptDate > today && apptDate <= conversionWindowEnd;
+                            });
+
+                            return hasConversion;
+                        });
+
+                        if (index < 3) {
+                            console.log(`Conversions found: ${conversions.length}`);
+                            const conversionWindowEnd = new Date(today);
+                            conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
+                            console.log(`Conversion window: ${today.toDateString()} to ${conversionWindowEnd.toDateString()}`);
+                        }
+
+                        totalConversions += conversions.length;
+
+                        // Group by month
+                        const monthKey = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}`;
+
+                        if (!monthlyResults[monthKey]) {
+                            monthlyResults[monthKey] = { remindersSent: 0, conversions: 0, month: monthKey };
+                        }
+
+                        monthlyResults[monthKey].remindersSent += patientsNeedingReminder.length;
+                        monthlyResults[monthKey].conversions += conversions.length;
+
+                        processedDates++;
+
+                    } catch (error) {
+                        console.error(`Error processing date "${todayDate}":`, error);
                     }
-                }
+                });
+
+                console.log(`\n${touchpointKey} Summary:`);
+                console.log(`- Processed dates: ${processedDates}`);
+                console.log(`- Total eligible patients found: ${totalEligibleFound}`);
+                console.log(`- Total reminders needed: ${totalRemindersNeeded}`);
+                console.log(`- Total conversions: ${totalConversions}`);
+
+                // Calculate conversion rates
+                Object.keys(monthlyResults).forEach(month => {
+                    const result = monthlyResults[month];
+                    result.conversionRate = result.remindersSent > 0 
+                        ? (result.conversions / result.remindersSent * 100).toFixed(1)
+                        : '0.0';
+                });
+
+                conversionResults[touchpointKey] = Object.values(monthlyResults).sort((a, b) => a.month.localeCompare(b.month));
                 
-                // Start processing dates for this touchpoint
-                processDateChunk();
-            }
-            
-            // Start processing touchpoints
-            processNextTouchpoint();
+                console.log(`Monthly results for ${touchpointKey}:`, Object.keys(monthlyResults).length, 'months');
+            });
+
+            console.log('=== CONVERSION CALCULATION COMPLETE ===');
+            updateMonthButtons();
         }
 
         // Update month filter buttons
