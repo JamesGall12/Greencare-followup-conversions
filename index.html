@@ -700,17 +700,25 @@
             return completedStatuses.includes(status);
         }
 
-        // Show status message
+        // Show status message with better error handling
         function showStatus(message, type = 'info') {
-            const statusEl = document.getElementById('statusMessage');
-            statusEl.className = `status-message status-${type}`;
-            statusEl.textContent = message;
-            statusEl.classList.remove('hidden');
-            
-            if (type === 'success') {
-                setTimeout(() => {
-                    statusEl.classList.add('hidden');
-                }, 3000);
+            try {
+                const statusEl = document.getElementById('statusMessage');
+                if (!statusEl) {
+                    console.error('Status element not found');
+                    return;
+                }
+                statusEl.className = `status-message status-${type}`;
+                statusEl.textContent = message;
+                statusEl.classList.remove('hidden');
+                
+                if (type === 'success') {
+                    setTimeout(() => {
+                        statusEl.classList.add('hidden');
+                    }, 3000);
+                }
+            } catch (error) {
+                console.error('Error in showStatus:', error);
             }
         }
 
@@ -740,9 +748,12 @@
             return { data: data, errors: [] };
         }
 
-        // Process CSV data with enhanced error handling
+        // Process CSV data with enhanced error handling and debugging
         function processCsvData(csvText) {
-            console.log('Processing enhanced CSV data...');
+            console.log('=== STARTING CSV PROCESSING ===');
+            console.log('CSV text length:', csvText.length);
+            console.log('First 200 characters:', csvText.substring(0, 200));
+            
             showStatus('🔄 Processing comprehensive data analysis...', 'info');
             
             try {
@@ -754,6 +765,7 @@
                 
                 const parsed = parseCSV(csvText);
                 console.log('Parse results:', parsed.data.length, 'rows');
+                console.log('First 3 parsed rows:', parsed.data.slice(0, 3));
                 
                 if (parsed.data.length === 0) {
                     showStatus('❌ No data rows found. Please check your CSV format.', 'error');
@@ -762,67 +774,70 @@
                 
                 // Check if we have enough columns
                 const firstRow = parsed.data[0];
-                if (!firstRow || firstRow.length < 8) {
-                    showStatus(`❌ Expected 8 columns (A-H), but found ${firstRow ? firstRow.length : 0}. Please check your CSV format.`, 'error');
-                    console.log('First row data:', firstRow);
+                console.log('First row columns:', firstRow.length, 'Expected: 8');
+                console.log('First row data:', firstRow);
+                
+                if (!firstRow || firstRow.length < 6) { // At least need patient ID and appointment date
+                    showStatus(`❌ Expected at least 6 columns, but found ${firstRow ? firstRow.length : 0}. Please check your CSV format.`, 'error');
                     return;
                 }
 
-                // Map all columns with validation
+                // Map data with safety checks
                 rawData = parsed.data.map((row, index) => {
+                    const mappedRow = {
+                        INTERNALID: (row[0] || '').toString().trim(),
+                        DOB: (row[1] || '').toString().trim(),
+                        SEX: (row[2] || '').toString().trim(),
+                        BOOKEDBY: (row[3] || '').toString().trim(),
+                        APPOINTMENTWITH: (row[4] || '').toString().trim(),
+                        APPOINTMENTDATE: (row[5] || '').toString().trim(),
+                        APPOINTMENTTYPE: (row[6] || '').toString().trim(),
+                        APPOINTMENT_STATUS: (row[7] || '').toString().trim()
+                    };
+                    
                     if (index < 3) {
-                        console.log(`Row ${index} sample:`, {
-                            INTERNALID: row[0],
-                            DOB: row[1], 
-                            SEX: row[2],
-                            BOOKEDBY: row[3],
-                            APPOINTMENTWITH: row[4],
-                            APPOINTMENTDATE: row[5],
-                            APPOINTMENTTYPE: row[6],
-                            APPOINTMENT_STATUS: row[7]
-                        });
+                        console.log(`Row ${index} mapped:`, mappedRow);
                     }
                     
-                    return {
-                        INTERNALID: row[0] || '',
-                        DOB: row[1] || '',
-                        SEX: row[2] || '',
-                        BOOKEDBY: row[3] || '',
-                        APPOINTMENTWITH: row[4] || '',
-                        APPOINTMENTDATE: row[5] || '',
-                        APPOINTMENTTYPE: row[6] || '',
-                        APPOINTMENT_STATUS: row[7] || ''
-                    };
+                    return mappedRow;
                 }).filter(row => {
                     // Must have at minimum: patient ID and appointment date
-                    return row.INTERNALID && row.APPOINTMENTDATE && 
+                    const isValid = row.INTERNALID && row.APPOINTMENTDATE && 
                            row.INTERNALID !== '' && row.APPOINTMENTDATE !== '';
+                    return isValid;
                 });
 
-                console.log('Raw data length:', rawData.length);
+                console.log('Raw data length after filtering:', rawData.length);
                 
                 if (rawData.length === 0) {
-                    showStatus('❌ No valid records found. Check that Column A has Patient IDs and Column F has Appointment Dates.', 'error');
+                    showStatus('❌ No valid records found. Check that you have Patient IDs and Appointment Dates.', 'error');
                     return;
                 }
+
+                // Show sample of appointment statuses
+                const uniqueStatuses = [...new Set(rawData.map(r => r.APPOINTMENT_STATUS))];
+                console.log('Unique appointment statuses found:', uniqueStatuses);
 
                 // Filter for completed appointments only
                 const validStatuses = ['Completed', 'At billing', 'With doctor'];
                 processedData = rawData.filter(row => {
                     const status = row.APPOINTMENT_STATUS;
-                    return status && validStatuses.includes(status);
+                    return status && validStatuses.some(validStatus => 
+                        status.toLowerCase().includes(validStatus.toLowerCase())
+                    );
                 });
 
                 console.log('Completed appointments:', processedData.length);
-                console.log('Sample appointment statuses:', [...new Set(rawData.map(r => r.APPOINTMENT_STATUS))]);
 
                 if (processedData.length === 0) {
-                    showStatus('⚠️ No completed appointments found. Check Column H contains: "Completed", "At billing", or "With doctor"', 'error');
-                    console.log('All appointment statuses found:', [...new Set(rawData.map(r => r.APPOINTMENT_STATUS))]);
+                    console.warn('No completed appointments found. Showing all appointment statuses:', uniqueStatuses);
+                    showStatus(`⚠️ No completed appointments found. Found statuses: ${uniqueStatuses.join(', ')}. Expected: Completed, At billing, or With doctor`, 'error');
                     return;
                 }
 
+                console.log('Data processing successful');
                 showStatus('✅ Data processed successfully! Generating comprehensive analysis...', 'success');
+                
                 updateDataStatus();
                 calculateAllAnalytics();
                 
@@ -870,118 +885,160 @@
             document.getElementById('executiveReportBtn').disabled = false;
         }
 
-        // Calculate all analytics
+        // Calculate all analytics with improved error handling
         function calculateAllAnalytics() {
-            console.log('=== CALCULATING COMPREHENSIVE ANALYTICS ===');
-            
-            showStatus('🔄 Calculating conversion rates and business metrics...', 'info');
-            
-            // Calculate conversions
-            calculateConversions();
-            
-            // Calculate other analytics
-            calculatePractitionerPerformance();
-            calculateChannelPerformance();
-            calculateLocationPerformance();
-            calculateDemographics();
-            calculateRevenueAnalysis();
-            
-            // Update executive summary
-            updateExecutiveSummary();
-            
-            console.log('=== ANALYTICS CALCULATION COMPLETE ===');
-            showStatus('✅ Complete business intelligence analysis ready!', 'success');
-            
-            updateDisplay();
+            try {
+                console.log('=== STARTING COMPREHENSIVE ANALYTICS CALCULATION ===');
+                console.log('Processed data length:', processedData.length);
+                
+                showStatus('🔄 Calculating conversion rates and business metrics...', 'info');
+                
+                // Calculate conversions
+                console.log('Calculating conversions...');
+                calculateConversions();
+                console.log('Conversions calculated');
+                
+                // Calculate other analytics
+                console.log('Calculating practitioner performance...');
+                calculatePractitionerPerformance();
+                console.log('Practitioner performance calculated');
+                
+                console.log('Calculating channel performance...');
+                calculateChannelPerformance();
+                console.log('Channel performance calculated');
+                
+                console.log('Calculating location performance...');
+                calculateLocationPerformance();
+                console.log('Location performance calculated');
+                
+                console.log('Calculating demographics...');
+                calculateDemographics();
+                console.log('Demographics calculated');
+                
+                console.log('Calculating revenue analysis...');
+                calculateRevenueAnalysis();
+                console.log('Revenue analysis calculated');
+                
+                // Update executive summary
+                console.log('Updating executive summary...');
+                updateExecutiveSummary();
+                console.log('Executive summary updated');
+                
+                console.log('=== ANALYTICS CALCULATION COMPLETE ===');
+                showStatus('✅ Complete business intelligence analysis ready!', 'success');
+                
+                console.log('Updating display...');
+                updateDisplay();
+                console.log('Display updated');
+                
+            } catch (error) {
+                console.error('Error in calculateAllAnalytics:', error);
+                showStatus('❌ Error calculating analytics: ' + error.message, 'error');
+            }
         }
 
-        // Calculate conversion rates (enhanced version)
+        // Calculate conversion rates with better error handling
         function calculateConversions() {
-            console.log('Calculating conversion rates...');
-            conversionResults = {};
+            try {
+                console.log('Calculating conversion rates...');
+                conversionResults = {};
 
-            Object.keys(touchpoints).forEach(touchpointKey => {
-                const touchpoint = touchpoints[touchpointKey];
-                const monthlyResults = {};
-
-                const allDates = [...new Set(processedData.map(row => row.APPOINTMENTDATE))];
-
-                allDates.forEach((todayDate) => {
+                Object.keys(touchpoints).forEach(touchpointKey => {
                     try {
-                        const today = parseAustralianDate(todayDate);
-                        if (!today || isNaN(today.getTime())) return;
+                        const touchpoint = touchpoints[touchpointKey];
+                        const monthlyResults = {};
 
-                        const referenceDate = new Date(today);
-                        referenceDate.setDate(referenceDate.getDate() - touchpoint.lookback);
+                        const allDates = [...new Set(processedData.map(row => row.APPOINTMENTDATE))];
+                        console.log(`Processing ${allDates.length} unique dates for ${touchpointKey}`);
 
-                        // Find patients who had completed appointment on reference date
-                        const eligiblePatients = processedData.filter(row => {
-                            const appointmentDate = parseAustralianDate(row.APPOINTMENTDATE);
-                            if (!appointmentDate) return false;
-                            return appointmentDate.toDateString() === referenceDate.toDateString();
+                        allDates.forEach((todayDate) => {
+                            try {
+                                const today = parseAustralianDate(todayDate);
+                                if (!today || isNaN(today.getTime())) return;
+
+                                const referenceDate = new Date(today);
+                                referenceDate.setDate(referenceDate.getDate() - touchpoint.lookback);
+
+                                // Find patients who had completed appointment on reference date
+                                const eligiblePatients = processedData.filter(row => {
+                                    const appointmentDate = parseAustralianDate(row.APPOINTMENTDATE);
+                                    if (!appointmentDate) return false;
+                                    return appointmentDate.toDateString() === referenceDate.toDateString();
+                                });
+
+                                // Remove patients who already rebooked
+                                const patientsNeedingReminder = eligiblePatients.filter(patient => {
+                                    const patientId = patient.INTERNALID;
+                                    const hasRebookedAlready = processedData.some(row => {
+                                        if (row.INTERNALID !== patientId) return false;
+                                        const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
+                                        if (!apptDate) return false;
+                                        return apptDate > referenceDate && apptDate < today;
+                                    });
+                                    return !hasRebookedAlready;
+                                });
+
+                                // Check for conversions
+                                const conversions = patientsNeedingReminder.filter(patient => {
+                                    const patientId = patient.INTERNALID;
+                                    const conversionWindowEnd = new Date(today);
+                                    conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
+
+                                    return processedData.some(row => {
+                                        if (row.INTERNALID !== patientId) return false;
+                                        const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
+                                        if (!apptDate) return false;
+                                        return apptDate > today && apptDate <= conversionWindowEnd;
+                                    });
+                                });
+
+                                // Group by month
+                                const monthKey = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}`;
+
+                                if (!monthlyResults[monthKey]) {
+                                    monthlyResults[monthKey] = { 
+                                        remindersSent: 0, 
+                                        conversions: 0, 
+                                        month: monthKey,
+                                        revenue: 0 
+                                    };
+                                }
+
+                                monthlyResults[monthKey].remindersSent += patientsNeedingReminder.length;
+                                monthlyResults[monthKey].conversions += conversions.length;
+                                
+                                // Calculate revenue from conversions - Each conversion = $89
+                                const conversionRevenue = conversions.length * 89;
+                                monthlyResults[monthKey].revenue += conversionRevenue;
+
+                            } catch (dateError) {
+                                console.error(`Error processing date "${todayDate}":`, dateError);
+                            }
                         });
 
-                        // Remove patients who already rebooked
-                        const patientsNeedingReminder = eligiblePatients.filter(patient => {
-                            const patientId = patient.INTERNALID;
-                            const hasRebookedAlready = processedData.some(row => {
-                                if (row.INTERNALID !== patientId) return false;
-                                const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
-                                if (!apptDate) return false;
-                                return apptDate > referenceDate && apptDate < today;
-                            });
-                            return !hasRebookedAlready;
+                        // Calculate conversion rates
+                        Object.keys(monthlyResults).forEach(month => {
+                            const result = monthlyResults[month];
+                            result.conversionRate = result.remindersSent > 0 
+                                ? (result.conversions / result.remindersSent * 100).toFixed(1)
+                                : '0.0';
                         });
 
-                        // Check for conversions
-                        const conversions = patientsNeedingReminder.filter(patient => {
-                            const patientId = patient.INTERNALID;
-                            const conversionWindowEnd = new Date(today);
-                            conversionWindowEnd.setDate(conversionWindowEnd.getDate() + 30);
-
-                            return processedData.some(row => {
-                                if (row.INTERNALID !== patientId) return false;
-                                const apptDate = parseAustralianDate(row.APPOINTMENTDATE);
-                                if (!apptDate) return false;
-                                return apptDate > today && apptDate <= conversionWindowEnd;
-                            });
-                        });
-
-                        // Group by month
-                        const monthKey = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}`;
-
-                        if (!monthlyResults[monthKey]) {
-                            monthlyResults[monthKey] = { 
-                                remindersSent: 0, 
-                                conversions: 0, 
-                                month: monthKey,
-                                revenue: 0 
-                            };
-                        }
-
-                        monthlyResults[monthKey].remindersSent += patientsNeedingReminder.length;
-                        monthlyResults[monthKey].conversions += conversions.length;
+                        conversionResults[touchpointKey] = Object.values(monthlyResults)
+                            .sort((a, b) => a.month.localeCompare(b.month));
                         
-                        // Calculate revenue from conversions - Each conversion = $89
-                        const conversionRevenue = conversions.length * 89;
-                        monthlyResults[monthKey].revenue += conversionRevenue;
-
-                    } catch (error) {
-                        console.error(`Error processing date "${todayDate}":`, error);
+                        console.log(`${touchpointKey} calculated: ${Object.keys(monthlyResults).length} months`);
+                        
+                    } catch (touchpointError) {
+                        console.error(`Error calculating ${touchpointKey}:`, touchpointError);
                     }
                 });
-
-                // Calculate conversion rates
-                Object.keys(monthlyResults).forEach(month => {
-                    const result = monthlyResults[month];
-                    result.conversionRate = result.remindersSent > 0 
-                        ? (result.conversions / result.remindersSent * 100).toFixed(1)
-                        : '0.0';
-                });
-
-                conversionResults[touchpointKey] = Object.values(monthlyResults)
-                    .sort((a, b) => a.month.localeCompare(b.month));
-            });
+                
+                console.log('Conversion calculation completed successfully');
+            } catch (error) {
+                console.error('Error in calculateConversions:', error);
+                showStatus('❌ Error calculating conversions: ' + error.message, 'error');
+            }
         }
 
         // Calculate practitioner performance
@@ -1242,47 +1299,718 @@
             document.getElementById('execTopChannel').textContent = bestChannel;
         }
 
-        // Update display based on current tab
+        // Update display based on current tab with error handling
         function updateDisplay() {
-            switch(currentTab) {
-                case 'conversions':
-                    updateConversionsDisplay();
-                    break;
-                case 'practitioners':
-                    updatePractitionersDisplay();
-                    break;
-                case 'channels':
-                    updateChannelsDisplay();
-                    break;
-                case 'locations':
-                    updateLocationsDisplay();
-                    break;
-                case 'demographics':
-                    updateDemographicsDisplay();
-                    break;
-                case 'revenue':
-                    updateRevenueDisplay();
-                    break;
+            try {
+                console.log('Updating display for tab:', currentTab);
+                switch(currentTab) {
+                    case 'conversions':
+                        updateConversionsDisplay();
+                        break;
+                    case 'practitioners':
+                        updatePractitionersDisplay();
+                        break;
+                    case 'channels':
+                        updateChannelsDisplay();
+                        break;
+                    case 'locations':
+                        updateLocationsDisplay();
+                        break;
+                    case 'demographics':
+                        updateDemographicsDisplay();
+                        break;
+                    case 'revenue':
+                        updateRevenueDisplay();
+                        break;
+                    default:
+                        console.warn('Unknown tab:', currentTab);
+                }
+                updateButtonStates();
+                console.log('Display update completed');
+            } catch (error) {
+                console.error('Error in updateDisplay:', error);
+                showStatus('❌ Error updating display: ' + error.message, 'error');
             }
-            updateButtonStates();
         }
 
-        // Update conversions display
+        // Update conversions display with error handling
         function updateConversionsDisplay() {
-            const currentResults = conversionResults[selectedTouchpoint] || [];
+            try {
+                console.log('Updating conversions display for touchpoint:', selectedTouchpoint);
+                const currentResults = conversionResults[selectedTouchpoint] || [];
+                console.log('Current results length:', currentResults.length);
+                
+                const totalReminders = currentResults.reduce((sum, r) => sum + r.remindersSent, 0);
+                const totalConversions = currentResults.reduce((sum, r) => sum + r.conversions, 0);
+                const totalRevenue = currentResults.reduce((sum, r) => sum + (r.revenue || 0), 0);
+                // Note: Revenue represents follow-up conversions at $89 each
+                const overallRate = totalReminders > 0 ? (totalConversions / totalReminders * 100).toFixed(1) : '0.0';
+
+                console.log('Summary stats:', {totalReminders, totalConversions, totalRevenue, overallRate});
+
+                // Update summary cards
+                const remindersEl = document.getElementById('totalReminders');
+                const conversionsEl = document.getElementById('totalConversions');
+                const rateEl = document.getElementById('overallRate');
+                const revenueEl = document.getElementById('conversionRevenue');
+
+                if (remindersEl) remindersEl.textContent = totalReminders.toLocaleString();
+                if (conversionsEl) conversionsEl.textContent = totalConversions.toLocaleString();
+                if (rateEl) rateEl.textContent = overallRate + '%';
+                if (revenueEl) revenueEl.textContent = '
+
+        // Update conversions table
+        function updateConversionsTable(results) {
+            const container = document.getElementById('conversionResults');
             
-            const totalReminders = currentResults.reduce((sum, r) => sum + r.remindersSent, 0);
-            const totalConversions = currentResults.reduce((sum, r) => sum + r.conversions, 0);
-            const totalRevenue = currentResults.reduce((sum, r) => sum + (r.revenue || 0), 0);
-            // Note: Revenue represents follow-up conversions at $89 each
-            const overallRate = totalReminders > 0 ? (totalConversions / totalReminders * 100).toFixed(1) : '0.0';
+            if (results.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 32px 0; color: #6b7280;">No conversion data available</div>';
+                return;
+            }
 
-            document.getElementById('totalReminders').textContent = totalReminders.toLocaleString();
-            document.getElementById('totalConversions').textContent = totalConversions.toLocaleString();
-            document.getElementById('overallRate').textContent = overallRate + '%';
-            document.getElementById('conversionRevenue').textContent = '$' + totalRevenue.toLocaleString();
+            let tableHTML = `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Month</th>
+                                <th class="text-right">Available Conversions</th>
+                                <th class="text-right">Conversions</th>
+                                <th class="text-right">Rate</th>
+                                <th class="text-right">Revenue Recovery</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
 
-            updateConversionsTable(currentResults);
+            results.forEach((result, index) => {
+                const rate = parseFloat(result.conversionRate);
+                const rateClass = rate >= 20 ? 'rate-high' : rate >= 10 ? 'rate-medium' : 'rate-low';
+                
+                tableHTML += `
+                    <tr class="zebra">
+                        <td>${result.month}</td>
+                        <td class="text-right">${result.remindersSent.toLocaleString()}</td>
+                        <td class="text-right">${result.conversions.toLocaleString()}</td>
+                        <td class="text-right">
+                            <span class="conversion-rate ${rateClass}">${result.conversionRate}%</span>
+                        </td>
+                        <td class="text-right revenue-positive">$${(result.revenue || 0).toLocaleString()}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += '</tbody></table></div>';
+            container.innerHTML = tableHTML;
+        }
+
+        // Update practitioners display
+        function updatePractitionersDisplay() {
+            const container = document.getElementById('practitionerResults');
+            const data = window.practitionerPerformance || [];
+            
+            if (data.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 32px 0; color: #6b7280;">No practitioner data available</div>';
+                return;
+            }
+
+            let tableHTML = `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Practitioner</th>
+                                <th class="text-right">Total Appointments</th>
+                                <th class="text-right">Unique Patients</th>
+                                <th class="text-right">Total Revenue</th>
+                                <th class="text-right">Avg Revenue/Appointment</th>
+                                <th class="text-right">No-Show Rate</th>
+                                <th>Top Appointment Type</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            data.forEach((practitioner, index) => {
+                const noShowClass = practitioner.noShowRate < 10 ? 'rate-high' : 
+                                  practitioner.noShowRate < 20 ? 'rate-medium' : 'rate-low';
+                
+                tableHTML += `
+                    <tr class="zebra">
+                        <td><strong>${practitioner.practitioner}</strong></td>
+                        <td class="text-right">${practitioner.totalAppointments.toLocaleString()}</td>
+                        <td class="text-right">${practitioner.uniquePatients.toLocaleString()}</td>
+                        <td class="text-right revenue-positive">$${practitioner.revenue.toLocaleString()}</td>
+                        <td class="text-right">$${practitioner.avgRevenuePerAppointment}</td>
+                        <td class="text-right">
+                            <span class="conversion-rate ${noShowClass}">${practitioner.noShowRate}%</span>
+                        </td>
+                        <td>${practitioner.topAppointmentType}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += '</tbody></table></div>';
+            container.innerHTML = tableHTML;
+        }
+
+        // Update channels display
+        function updateChannelsDisplay() {
+            const container = document.getElementById('channelResults');
+            const data = window.channelPerformance || [];
+            
+            if (data.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 32px 0; color: #6b7280;">No channel data available</div>';
+                return;
+            }
+
+            let tableHTML = `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Booking Channel</th>
+                                <th class="text-right">Total Bookings</th>
+                                <th class="text-right">Completed</th>
+                                <th class="text-right">Show Rate</th>
+                                <th class="text-right">No-Show Rate</th>
+                                <th class="text-right">Total Revenue</th>
+                                <th class="text-right">Avg Revenue/Booking</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            data.forEach((channel, index) => {
+                const showRateClass = channel.showRate >= 80 ? 'rate-high' : 
+                                     channel.showRate >= 70 ? 'rate-medium' : 'rate-low';
+                const noShowClass = channel.noShowRate < 10 ? 'rate-high' : 
+                                   channel.noShowRate < 20 ? 'rate-medium' : 'rate-low';
+                
+                tableHTML += `
+                    <tr class="zebra">
+                        <td><strong>${channel.channel}</strong></td>
+                        <td class="text-right">${channel.totalBookings.toLocaleString()}</td>
+                        <td class="text-right">${channel.completedAppointments.toLocaleString()}</td>
+                        <td class="text-right">
+                            <span class="conversion-rate ${showRateClass}">${channel.showRate}%</span>
+                        </td>
+                        <td class="text-right">
+                            <span class="conversion-rate ${noShowClass}">${channel.noShowRate}%</span>
+                        </td>
+                        <td class="text-right revenue-positive">$${channel.revenue.toLocaleString()}</td>
+                        <td class="text-right">$${channel.avgRevenuePerBooking}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += '</tbody></table></div>';
+            container.innerHTML = tableHTML;
+        }
+
+        // Update locations display
+        function updateLocationsDisplay() {
+            const container = document.getElementById('locationResults');
+            const data = window.locationPerformance || [];
+            
+            if (data.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 32px 0; color: #6b7280;">No location data available</div>';
+                return;
+            }
+
+            let tableHTML = `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Location</th>
+                                <th class="text-right">Total Appointments</th>
+                                <th class="text-right">Unique Patients</th>
+                                <th class="text-right">Total Revenue</th>
+                                <th class="text-right">Avg Revenue/Appointment</th>
+                                <th>Top Appointment Type</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            data.forEach((location, index) => {
+                tableHTML += `
+                    <tr class="zebra">
+                        <td><strong>${location.location}</strong></td>
+                        <td class="text-right">${location.totalAppointments.toLocaleString()}</td>
+                        <td class="text-right">${location.uniquePatients.toLocaleString()}</td>
+                        <td class="text-right revenue-positive">$${location.revenue.toLocaleString()}</td>
+                        <td class="text-right">$${location.avgRevenuePerAppointment}</td>
+                        <td>${location.topAppointmentType}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += '</tbody></table></div>';
+            container.innerHTML = tableHTML;
+        }
+
+        // Update demographics display
+        function updateDemographicsDisplay() {
+            const container = document.getElementById('demographicResults');
+            const data = window.demographicData;
+            
+            if (!data) {
+                container.innerHTML = '<div style="text-align: center; padding: 32px 0; color: #6b7280;">No demographic data available</div>';
+                return;
+            }
+
+            let html = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px;">
+                    <div>
+                        <h3 style="margin-bottom: 16px; font-weight: 600;">Age Group Analysis</h3>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Age Group</th>
+                                        <th class="text-right">Patients</th>
+                                        <th class="text-right">Revenue</th>
+                                        <th class="text-right">Avg Revenue</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+            `;
+
+            data.ageGroups.forEach((group, index) => {
+                html += `
+                    <tr class="zebra">
+                        <td><strong>${group.ageGroup}</strong></td>
+                        <td class="text-right">${group.count.toLocaleString()}</td>
+                        <td class="text-right revenue-positive">$${group.revenue.toLocaleString()}</td>
+                        <td class="text-right">$${group.avgRevenue}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 style="margin-bottom: 16px; font-weight: 600;">Gender Analysis</h3>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Gender</th>
+                                        <th class="text-right">Patients</th>
+                                        <th class="text-right">Revenue</th>
+                                        <th class="text-right">Avg Revenue</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+            `;
+
+            data.genderStats.forEach((gender, index) => {
+                html += `
+                    <tr class="zebra">
+                        <td><strong>${gender.gender}</strong></td>
+                        <td class="text-right">${gender.count.toLocaleString()}</td>
+                        <td class="text-right revenue-positive">$${gender.revenue.toLocaleString()}</td>
+                        <td class="text-right">$${gender.avgRevenue}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        // Update revenue display
+        function updateRevenueDisplay() {
+            const container = document.getElementById('revenueResults');
+            const data = window.revenueAnalysis;
+            
+            if (!data) {
+                container.innerHTML = '<div style="text-align: center; padding: 32px 0; color: #6b7280;">No revenue data available</div>';
+                return;
+            }
+
+            let html = `
+                <div style="margin-bottom: 32px;">
+                    <div class="summary-grid">
+                        <div class="summary-card">
+                            <div>
+                                <div class="summary-label">Total Revenue</div>
+                                <div class="summary-value revenue-positive">$${data.totalRevenue.toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="summary-card">
+                            <div>
+                                <div class="summary-label">Lost to No-Shows</div>
+                                <div class="summary-value revenue-negative">$${data.lostRevenue.toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="summary-card">
+                            <div>
+                                <div class="summary-label">Recovery Potential</div>
+                                <div class="summary-value" style="color: #7c3aed;">$${(data.totalRevenue + data.lostRevenue).toLocaleString()}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h3 style="margin-bottom: 16px; font-weight: 600;">Revenue by Appointment Type</h3>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Appointment Type</th>
+                                <th class="text-right">Count</th>
+                                <th class="text-right">Total Revenue</th>
+                                <th class="text-right">Avg Revenue</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            data.appointmentTypes.forEach((type, index) => {
+                html += `
+                    <tr class="zebra">
+                        <td><strong>${type.appointmentType}</strong></td>
+                        <td class="text-right">${type.count.toLocaleString()}</td>
+                        <td class="text-right revenue-positive">$${type.revenue.toLocaleString()}</td>
+                        <td class="text-right">$${type.avgRevenue}</td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        // Update button states
+        function updateButtonStates() {
+            document.querySelectorAll('[data-touchpoint]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.touchpoint === selectedTouchpoint);
+            });
+            
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.tab === currentTab);
+            });
+            
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.toggle('active', content.id === currentTab);
+            });
+        }
+
+        // Export comprehensive results with better error handling
+        function exportComprehensiveResults() {
+            try {
+                if (Object.keys(conversionResults).length === 0) {
+                    alert('No data to export. Please upload and process your CSV first.');
+                    return;
+                }
+                
+                let csvContent = '';
+                
+                // Executive Summary
+                csvContent += 'EXECUTIVE SUMMARY\n';
+                csvContent += 'Metric,Value\n';
+                csvContent += `Total Records,${rawData.length}\n`;
+                csvContent += `Completed Appointments,${processedData.length}\n`;
+                csvContent += `No-Show Rate,${Math.round((rawData.filter(r => r.APPOINTMENT_STATUS === 'DNA').length / rawData.length) * 100)}%\n`;
+                csvContent += `Estimated Total Revenue,${processedData.reduce((sum, row) => sum + estimateRevenue(row.APPOINTMENTTYPE), 0).toLocaleString()}\n\n`;
+                
+                // Conversion Results
+                csvContent += 'CONVERSION ANALYSIS\n';
+                csvContent += 'Touchpoint,Month,Available Conversions,Conversions,Conversion Rate,Revenue Recovery\n';
+                Object.keys(touchpoints).forEach(touchpointKey => {
+                    const touchpointName = touchpoints[touchpointKey].name;
+                    const results = conversionResults[touchpointKey] || [];
+                    results.forEach(result => {
+                        csvContent += `"${touchpointName}","${result.month}",${result.remindersSent},${result.conversions},"${result.conversionRate}%","${(result.revenue || 0).toLocaleString()}"\n`;
+                    });
+                });
+                csvContent += '\n';
+                
+                // Practitioner Performance
+                if (window.practitionerPerformance && window.practitionerPerformance.length > 0) {
+                    csvContent += 'PRACTITIONER PERFORMANCE\n';
+                    csvContent += 'Practitioner,Total Appointments,Unique Patients,Total Revenue,Avg Revenue per Appointment,No-Show Rate,Top Appointment Type\n';
+                    window.practitionerPerformance.forEach(p => {
+                        csvContent += `"${p.practitioner}",${p.totalAppointments},${p.uniquePatients},"${p.revenue.toLocaleString()}","${p.avgRevenuePerAppointment}","${p.noShowRate}%","${p.topAppointmentType}"\n`;
+                    });
+                    csvContent += '\n';
+                }
+                
+                // Channel Performance
+                if (window.channelPerformance && window.channelPerformance.length > 0) {
+                    csvContent += 'BOOKING CHANNEL PERFORMANCE\n';
+                    csvContent += 'Channel,Total Bookings,Completed Appointments,Show Rate,No-Show Rate,Total Revenue,Avg Revenue per Booking\n';
+                    window.channelPerformance.forEach(c => {
+                        csvContent += `"${c.channel}",${c.totalBookings},${c.completedAppointments},"${c.showRate}%","${c.noShowRate}%","${c.revenue.toLocaleString()}","${c.avgRevenuePerBooking}"\n`;
+                    });
+                    csvContent += '\n';
+                }
+                
+                // Create and download file
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                
+                if (link.download !== undefined) {
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', 'cannabis_clinic_business_intelligence_report.csv');
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    showStatus('✅ Complete business intelligence report exported successfully!', 'success');
+                } else {
+                    alert('Your browser does not support file downloads');
+                }
+            } catch (error) {
+                console.error('Export error:', error);
+                showStatus('❌ Error exporting data: ' + error.message, 'error');
+            }
+        }
+
+        // Export executive summary
+        function exportExecutiveSummary() {
+            if (Object.keys(conversionResults).length === 0) {
+                alert('No data to export. Please upload and process your CSV first.');
+                return;
+            }
+            
+            const totalRevenue = processedData.reduce((sum, row) => sum + estimateRevenue(row.APPOINTMENTTYPE), 0);
+            const lostRevenue = rawData.filter(row => row.APPOINTMENT_STATUS === 'DNA')
+                .reduce((sum, row) => sum + estimateRevenue(row.APPOINTMENTTYPE), 0);
+            const noShowRate = Math.round((rawData.filter(r => r.APPOINTMENT_STATUS === 'DNA').length / rawData.length) * 100);
+            
+            let csvContent = 'CANNABIS CLINIC - EXECUTIVE SUMMARY REPORT\n';
+            csvContent += `Generated: ${new Date().toLocaleDateString()}\n\n`;
+            
+            csvContent += 'KEY BUSINESS METRICS\n';
+            csvContent += 'Metric,Value,Impact\n';
+            csvContent += `Total Revenue Generated,"${totalRevenue.toLocaleString()}","New patients: $119 | Follow-ups: $89"\n`;
+            csvContent += `Revenue Lost to No-Shows,"$${lostRevenue.toLocaleString()}","Immediate recovery opportunity"\n`;
+            csvContent += `No-Show Rate,"${noShowRate}%","Operational efficiency target"\n`;
+            csvContent += `Total Unique Patients,"${new Set(processedData.map(r => r.INTERNALID)).size.toLocaleString()}","Patient base size"\n`;
+            csvContent += `Completed Appointments,"${processedData.length.toLocaleString()}","Service delivery volume"\n\n`;
+            
+            csvContent += 'TOP PERFORMANCE INSIGHTS\n';
+            csvContent += 'Category,Top Performer,Performance Metric\n';
+            
+            if (window.practitionerPerformance && window.practitionerPerformance.length > 0) {
+                const topPractitioner = window.practitionerPerformance[0];
+                csvContent += `Best Practitioner,"${topPractitioner.practitioner}","$${topPractitioner.revenue.toLocaleString()} revenue"\n`;
+            }
+            
+            if (window.channelPerformance && window.channelPerformance.length > 0) {
+                const topChannel = window.channelPerformance[0];
+                csvContent += `Best Booking Channel,"${topChannel.channel}","${topChannel.showRate}% show rate"\n`;
+            }
+            
+            if (window.locationPerformance && window.locationPerformance.length > 0) {
+                const topLocation = window.locationPerformance[0];
+                csvContent += `Best Location,"${topLocation.location}","$${topLocation.revenue.toLocaleString()} revenue"\n`;
+            }
+            
+            csvContent += '\n';
+            csvContent += 'ACTIONABLE RECOMMENDATIONS\n';
+            csvContent += 'Priority,Recommendation,Expected Impact\n';
+            csvContent += '1,"Implement automated follow-up system","Each conversion = $89 revenue recovery"\n';
+            csvContent += '2,"Address no-show patterns","Recover 
+            
+            // Create and download file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', 'executive_summary_cannabis_clinic.csv');
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                showStatus('✅ Executive summary exported successfully!', 'success');
+            } else {
+                alert('Your browser does not support file downloads');
+            }
+        }
+
+        // Event listeners
+        document.getElementById('csvFile').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            console.log('File selected:', file.name, 'Size:', file.size, 'Type:', file.type);
+            
+            if (!file.name.endsWith('.csv')) {
+                showStatus('❌ Please select a CSV file (.csv extension required)', 'error');
+                return;
+            }
+            
+            if (file.size === 0) {
+                showStatus('❌ File appears to be empty', 'error');
+                return;
+            }
+            
+            if (file.size > 50 * 1024 * 1024) { // 50MB limit
+                showStatus('❌ File is too large (over 50MB). Please use a smaller file.', 'error');
+                return;
+            }
+            
+            showStatus('🔄 Reading file and preparing comprehensive analysis...', 'info');
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                console.log('File read successfully, length:', e.target.result.length);
+                processCsvData(e.target.result);
+            };
+            reader.onerror = function(error) {
+                console.error('FileReader error:', error);
+                showStatus('❌ Error reading file. Please try again.', 'error');
+            };
+            reader.readAsText(file);
+        });
+
+        // Export buttons
+        document.getElementById('exportDataBtn').addEventListener('click', exportComprehensiveResults);
+        document.getElementById('executiveReportBtn').addEventListener('click', exportExecutiveSummary);
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                currentTab = this.dataset.tab;
+                updateDisplay();
+            });
+        });
+
+        // Touchpoint selection
+        document.getElementById('touchpointButtons').addEventListener('click', function(e) {
+            if (e.target.dataset.touchpoint) {
+                selectedTouchpoint = e.target.dataset.touchpoint;
+                updateDisplay();
+            }
+        });
+
+        // Initialize with error checking
+        function initializeDashboard() {
+            try {
+                console.log('Initializing dashboard...');
+                
+                // Check if key elements exist
+                const requiredElements = [
+                    'csvFile', 'statusMessage', 'totalReminders', 'totalConversions', 
+                    'overallRate', 'conversionRevenue', 'conversionResults'
+                ];
+                
+                const missingElements = requiredElements.filter(id => !document.getElementById(id));
+                if (missingElements.length > 0) {
+                    console.error('Missing required elements:', missingElements);
+                    return;
+                }
+                
+                updateButtonStates();
+                console.log('Enhanced Cannabis Clinic Business Intelligence Dashboard initialized successfully');
+            } catch (error) {
+                console.error('Error initializing dashboard:', error);
+            }
+        }
+
+        // Initialize when page loads
+        initializeDashboard();
+    </script>
+</body>
+</html> + lostRevenue.toLocaleString() + ' in lost revenue"\n';
+            csvContent += '3,"Optimize booking channels","Focus resources on highest-performing channels"\n';
+            csvContent += '4,"Scale successful follow-up touchpoints","Multiply $89 conversion value across patient base"\n';
+            
+            // Create and download file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', 'executive_summary_cannabis_clinic.csv');
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                showStatus('✅ Executive summary exported successfully!', 'success');
+            } else {
+                alert('Your browser does not support file downloads');
+            }
+        }
+
+        // Event listeners
+        document.getElementById('csvFile').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            if (!file.name.endsWith('.csv')) {
+                showStatus('❌ Please select a CSV file', 'error');
+                return;
+            }
+            
+            showStatus('🔄 Reading file and preparing comprehensive analysis...', 'info');
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                processCsvData(e.target.result);
+            };
+            reader.onerror = function() {
+                showStatus('❌ Error reading file', 'error');
+            };
+            reader.readAsText(file);
+        });
+
+        // Export buttons
+        document.getElementById('exportDataBtn').addEventListener('click', exportComprehensiveResults);
+        document.getElementById('executiveReportBtn').addEventListener('click', exportExecutiveSummary);
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                currentTab = this.dataset.tab;
+                updateDisplay();
+            });
+        });
+
+        // Touchpoint selection
+        document.getElementById('touchpointButtons').addEventListener('click', function(e) {
+            if (e.target.dataset.touchpoint) {
+                selectedTouchpoint = e.target.dataset.touchpoint;
+                updateDisplay();
+            }
+        });
+
+        // Initialize
+        updateButtonStates();
+        
+        console.log('Enhanced Cannabis Clinic Business Intelligence Dashboard initialized');
+    </script>
+</body>
+</html> + totalRevenue.toLocaleString();
+
+                updateConversionsTable(currentResults);
+                console.log('Conversions display updated successfully');
+            } catch (error) {
+                console.error('Error in updateConversionsDisplay:', error);
+                showStatus('❌ Error updating conversions display: ' + error.message, 'error');
+            }
         }
 
         // Update conversions table
@@ -1635,71 +2363,76 @@
             });
         }
 
-        // Export comprehensive results
+        // Export comprehensive results with better error handling
         function exportComprehensiveResults() {
-            if (Object.keys(conversionResults).length === 0) {
-                alert('No data to export. Please upload and process your CSV first.');
-                return;
-            }
-            
-            let csvContent = '';
-            
-            // Executive Summary
-            csvContent += 'EXECUTIVE SUMMARY\n';
-            csvContent += 'Metric,Value\n';
-            csvContent += `Total Records,${rawData.length}\n`;
-            csvContent += `Completed Appointments,${processedData.length}\n`;
-            csvContent += `No-Show Rate,${Math.round((rawData.filter(r => r.APPOINTMENT_STATUS === 'DNA').length / rawData.length) * 100)}%\n`;
-            csvContent += `Estimated Total Revenue,$${processedData.reduce((sum, row) => sum + estimateRevenue(row.APPOINTMENTTYPE), 0).toLocaleString()}\n\n`;
-            
-            // Conversion Results
-            csvContent += 'CONVERSION ANALYSIS\n';
-            csvContent += 'Touchpoint,Month,Available Conversions,Conversions,Conversion Rate,Revenue Recovery\n';
-            Object.keys(touchpoints).forEach(touchpointKey => {
-                const touchpointName = touchpoints[touchpointKey].name;
-                const results = conversionResults[touchpointKey] || [];
-                results.forEach(result => {
-                    csvContent += `"${touchpointName}","${result.month}",${result.remindersSent},${result.conversions},"${result.conversionRate}%","$${(result.revenue || 0).toLocaleString()}"\n`;
-                });
-            });
-            csvContent += '\n';
-            
-            // Practitioner Performance
-            if (window.practitionerPerformance) {
-                csvContent += 'PRACTITIONER PERFORMANCE\n';
-                csvContent += 'Practitioner,Total Appointments,Unique Patients,Total Revenue,Avg Revenue per Appointment,No-Show Rate,Top Appointment Type\n';
-                window.practitionerPerformance.forEach(p => {
-                    csvContent += `"${p.practitioner}",${p.totalAppointments},${p.uniquePatients},"$${p.revenue.toLocaleString()}","$${p.avgRevenuePerAppointment}","${p.noShowRate}%","${p.topAppointmentType}"\n`;
-                });
-                csvContent += '\n';
-            }
-            
-            // Channel Performance
-            if (window.channelPerformance) {
-                csvContent += 'BOOKING CHANNEL PERFORMANCE\n';
-                csvContent += 'Channel,Total Bookings,Completed Appointments,Show Rate,No-Show Rate,Total Revenue,Avg Revenue per Booking\n';
-                window.channelPerformance.forEach(c => {
-                    csvContent += `"${c.channel}",${c.totalBookings},${c.completedAppointments},"${c.showRate}%","${c.noShowRate}%","$${c.revenue.toLocaleString()}","$${c.avgRevenuePerBooking}"\n`;
-                });
-                csvContent += '\n';
-            }
-            
-            // Create and download file
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            
-            if (link.download !== undefined) {
-                const url = URL.createObjectURL(blob);
-                link.setAttribute('href', url);
-                link.setAttribute('download', 'cannabis_clinic_business_intelligence_report.csv');
-                link.style.visibility = 'hidden';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+            try {
+                if (Object.keys(conversionResults).length === 0) {
+                    alert('No data to export. Please upload and process your CSV first.');
+                    return;
+                }
                 
-                showStatus('✅ Complete business intelligence report exported successfully!', 'success');
-            } else {
-                alert('Your browser does not support file downloads');
+                let csvContent = '';
+                
+                // Executive Summary
+                csvContent += 'EXECUTIVE SUMMARY\n';
+                csvContent += 'Metric,Value\n';
+                csvContent += `Total Records,${rawData.length}\n`;
+                csvContent += `Completed Appointments,${processedData.length}\n`;
+                csvContent += `No-Show Rate,${Math.round((rawData.filter(r => r.APPOINTMENT_STATUS === 'DNA').length / rawData.length) * 100)}%\n`;
+                csvContent += `Estimated Total Revenue,${processedData.reduce((sum, row) => sum + estimateRevenue(row.APPOINTMENTTYPE), 0).toLocaleString()}\n\n`;
+                
+                // Conversion Results
+                csvContent += 'CONVERSION ANALYSIS\n';
+                csvContent += 'Touchpoint,Month,Available Conversions,Conversions,Conversion Rate,Revenue Recovery\n';
+                Object.keys(touchpoints).forEach(touchpointKey => {
+                    const touchpointName = touchpoints[touchpointKey].name;
+                    const results = conversionResults[touchpointKey] || [];
+                    results.forEach(result => {
+                        csvContent += `"${touchpointName}","${result.month}",${result.remindersSent},${result.conversions},"${result.conversionRate}%","${(result.revenue || 0).toLocaleString()}"\n`;
+                    });
+                });
+                csvContent += '\n';
+                
+                // Practitioner Performance
+                if (window.practitionerPerformance && window.practitionerPerformance.length > 0) {
+                    csvContent += 'PRACTITIONER PERFORMANCE\n';
+                    csvContent += 'Practitioner,Total Appointments,Unique Patients,Total Revenue,Avg Revenue per Appointment,No-Show Rate,Top Appointment Type\n';
+                    window.practitionerPerformance.forEach(p => {
+                        csvContent += `"${p.practitioner}",${p.totalAppointments},${p.uniquePatients},"${p.revenue.toLocaleString()}","${p.avgRevenuePerAppointment}","${p.noShowRate}%","${p.topAppointmentType}"\n`;
+                    });
+                    csvContent += '\n';
+                }
+                
+                // Channel Performance
+                if (window.channelPerformance && window.channelPerformance.length > 0) {
+                    csvContent += 'BOOKING CHANNEL PERFORMANCE\n';
+                    csvContent += 'Channel,Total Bookings,Completed Appointments,Show Rate,No-Show Rate,Total Revenue,Avg Revenue per Booking\n';
+                    window.channelPerformance.forEach(c => {
+                        csvContent += `"${c.channel}",${c.totalBookings},${c.completedAppointments},"${c.showRate}%","${c.noShowRate}%","${c.revenue.toLocaleString()}","${c.avgRevenuePerBooking}"\n`;
+                    });
+                    csvContent += '\n';
+                }
+                
+                // Create and download file
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                
+                if (link.download !== undefined) {
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', 'cannabis_clinic_business_intelligence_report.csv');
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    showStatus('✅ Complete business intelligence report exported successfully!', 'success');
+                } else {
+                    alert('Your browser does not support file downloads');
+                }
+            } catch (error) {
+                console.error('Export error:', error);
+                showStatus('❌ Error exporting data: ' + error.message, 'error');
             }
         }
 
